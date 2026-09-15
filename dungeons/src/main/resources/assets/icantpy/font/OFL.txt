@@ -1,0 +1,3 @@
+This Font Software is Nunito, licensed under the SIL Open Font License 1.1.
+Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito)
+https://scripts.sil.org/OFL

@@ -1,0 +1,28 @@
+{
+	"required": true,
+	"package": "net.icantpy.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [],
+	"client": [
+		"BossHealthOverlayAccessor",
+		"ItemStackNameMixin",
+		"ItemStackFoilMixin",
+		"ItemStackTooltipMixin",
+		"DyedItemColorMixin",
+		"CustomModelDataTintMixin",
+		"HumanoidEquipmentLeatherMixin",
+		"ItemStackRenderStateMixin",
+		"ItemModelResolverMixin",
+		"ItemRenderLayerSubmitMixin",
+		"MixinLeapContainerScreen",
+		"MixinLeapMenuScreens",
+		"MixinLeapScreen",
+		"MixinOdinLeapTeammates"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

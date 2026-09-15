@@ -1,0 +1,10 @@
+{
+  "key.category.icantpy.controls": "icantpy",
+  "key.category.icantpy_loader.controls": "icantpy",
+  "key.icantpy.open_config": "Open icantpy",
+  "key.icantpy.add_waypoint": "Add waypoint at look",
+  "key.icantpy_loader.open_config": "Open icantpy",
+  "key.icantpy_loader.add_waypoint": "Add waypoint at look",
+  "key.icantpy_loader.open_stats": "Open altered stats",
+  "key.icantpy_loader.open_loadout": "Open altered loadouts"
+}

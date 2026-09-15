@@ -1,0 +1,18 @@
+{
+	"required": true,
+	"package": "net.icantpy.loader.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [],
+	"client": [
+		"ChatScreenMixin",
+		"ClientPacketListenerMixin",
+		"ConnectionMixin",
+		"GameRendererMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

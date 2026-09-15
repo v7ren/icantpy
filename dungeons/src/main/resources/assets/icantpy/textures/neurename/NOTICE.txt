@@ -1,0 +1,14 @@
+NEU Item Customizer assets
+==========================
+
+The PNG files under this directory (help.png, itemcustomize/reset.png and the files in
+core/) are reproduced from NotEnoughUpdates (NEU), which is licensed under the GNU Lesser
+General Public License v3.0 (LGPL-3.0).
+
+NotEnoughUpdates: https://github.com/Moulberry/NotEnoughUpdates
+License: GNU Lesser General Public License v3.0 (see the upstream COPYING.LESSER).
+
+icantpy's NEU-style item customizer screen is a reimplementation of NEU's
+GuiItemCustomize / GuiElementColour / GuiElementBoolean for modern Minecraft, using these
+assets. These files remain under LGPL-3.0 and are attributed separately from icantpy's own
+root license.

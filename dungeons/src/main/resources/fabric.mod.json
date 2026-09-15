@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "icantpy",
+	"version": "${version}",
+	"name": "icantpy",
+	"description": "F7/M7 tick timers and F6/M6 terracotta timers. Drop this jar in mods/ as a normal Fabric mod, or use icantpy-loader with this jar in icantpy/runtime/.",
+	"authors": [
+		"Me!"
+	],
+	"license": "GPL-3.0-only",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			{
+				"value": "net.icantpy.Icantpy",
+				"adapter": "kotlin"
+			}
+		]
+	},
+	"mixins": [
+		"icantpy.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=25",
+		"fabric-api": "*",
+		"fabric-language-kotlin": "*"
+	}
+}

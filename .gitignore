@@ -1,0 +1,42 @@
+# Ignore everything that is not mod source.
+*
+
+# Keep this file and the Gradle files needed to build the mods.
+!.gitignore
+!gradle.properties
+!settings.gradle.kts
+!LICENSE
+!README.md
+
+# Mod source trees
+!dungeons/
+!dungeons/**
+!payload-2612/
+!payload-2612/**
+!icantpy-loader/
+!icantpy-loader/**
+!icantpy-shared/
+!icantpy-shared/**
+
+# Build, run, and IDE junk inside the modules
+.gradle/
+.kotlin/
+.local-maven/
+build/
+**/build/
+dist/
+**/run/
+**/logs/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Not mod source
+*.md
+!README.md
+*.py
+*.pyc
+__pycache__/
+*.html
+*.sh
