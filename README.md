@@ -6,6 +6,15 @@ Open the menu with `/icantpy` or `/crypt`.
 
 The `icantpy-loader` jar downloads and hot-reloads the payload, so most feature updates do not need a Minecraft restart.
 
+## Install
+
+Put the jar that matches your Minecraft version in `.minecraft/mods/`:
+
+- Minecraft 26.2: [`releases/icantpy 1.0.0 - 26.2.jar`](releases/icantpy%201.0.0%20-%2026.2.jar)
+- Minecraft 26.1.2: [`releases/icantpy 1.0.0 - 26.1.2.jar`](releases/icantpy%201.0.0%20-%2026.1.2.jar)
+
+Use only one of those jars. They run as a normal Fabric mod when `icantpy-loader` is not installed. Do not put both version jars in `mods/` at the same time, and do not place a payload jar next to the loader.
+
 ## Features
 
 ### Clocks
