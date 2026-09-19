@@ -149,6 +149,18 @@ Config chrome:
 - Themes: Midnight, Phosphor, Paper
 - System fonts, accent color, corner radii, menu blur
 
+## Acknowledgements
+
+icantpy is its own client, but several features began as ports of other SkyBlock mods. Those UIs and behaviours were rebuilt for Minecraft 26.1.2 and 26.2, then fixed or extended in this project. The original authors are not affiliated with icantpy.
+
+- **[Skyblocker](https://github.com/SkyblockerMod/Skyblocker)** — the tabbed item customizer (`/icantpy custom`) follows Skyblocker's custom-item screen and was reworked for the current game versions.
+- **[NotEnoughUpdates](https://github.com/NotEnoughUpdates/NotEnoughUpdates)** — the rename editor follows NEU's item customizer, ported and corrected for modern Minecraft. Some original NEU textures remain under LGPL-3.0; see the bundled notice with those assets.
+- **[SkyHanni](https://github.com/hannibal002/SkyHanni)** — special thanks for SkyBlock data that icantpy relies on.
+
+Dungeon clocks and the leap menu also draw on ideas from [Odin](https://github.com/odtheking/Odin). Please support the original mods if you use their standalone clients.
+
 ## License
 
 [GPL-3.0-only](LICENSE). Source must stay available under the same terms if you distribute the mod or a modified version.
+
+Bundled NEU item-customizer textures remain under LGPL-3.0; see the notice shipped with those assets.
