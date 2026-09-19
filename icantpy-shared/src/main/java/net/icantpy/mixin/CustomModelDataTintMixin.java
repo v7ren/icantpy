@@ -18,6 +18,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(CustomModelDataSource.class)
 public abstract class CustomModelDataTintMixin {
+    @Inject(method = "calculate", at = @At("HEAD"))
+    private void icantpy$beginLeatherOwner(
+            ItemStack stack,
+            ClientLevel level,
+            LivingEntity owner,
+            CallbackInfoReturnable<Integer> cir
+    ) {
+        IcantpyBridge.INSTANCE.beginAppearanceOwner(owner);
+    }
+
     @Inject(method = "calculate", at = @At("RETURN"), cancellable = true)
     private void icantpy$customLeatherTint(
             ItemStack stack,
@@ -25,6 +35,10 @@ public abstract class CustomModelDataTintMixin {
             LivingEntity owner,
             CallbackInfoReturnable<Integer> cir
     ) {
-        cir.setReturnValue(IcantpyBridge.INSTANCE.customLeatherColor(stack, cir.getReturnValue()));
+        try {
+            cir.setReturnValue(IcantpyBridge.INSTANCE.customLeatherColor(stack, cir.getReturnValue()));
+        } finally {
+            IcantpyBridge.INSTANCE.endAppearanceOwner();
+        }
     }
 }

@@ -42,6 +42,11 @@ class IcantpyBridgeTest {
     }
 
     @Test
+    fun cameraEyeHeightIsNoopWithoutPayload() {
+        assertEquals(null, IcantpyBridge.cameraEyeHeight(null, 1.62f))
+    }
+
+    @Test
     fun leapMenuIsNoopWithoutPayload() {
         assertFalse(IcantpyBridge.wantsLeapMenu("Spirit Leap"))
         assertFalse(IcantpyBridge.hideOdinLeapMenu())

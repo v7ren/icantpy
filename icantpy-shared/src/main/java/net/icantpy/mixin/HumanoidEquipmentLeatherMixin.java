@@ -20,18 +20,32 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(HumanoidMobRenderer.class)
 public abstract class HumanoidEquipmentLeatherMixin {
+    @Inject(method = "getEquipmentIfRenderable", at = @At("HEAD"))
+    private static void icantpy$beginLeatherOwner(
+            LivingEntity entity,
+            EquipmentSlot slot,
+            CallbackInfoReturnable<ItemStack> cir
+    ) {
+        IcantpyBridge.INSTANCE.beginAppearanceOwner(entity);
+    }
+
     @Inject(method = "getEquipmentIfRenderable", at = @At("RETURN"))
     private static void icantpy$bakeLeatherColour(
             LivingEntity entity,
             EquipmentSlot slot,
             CallbackInfoReturnable<ItemStack> cir
     ) {
-        ItemStack stack = cir.getReturnValue();
-        if (stack == null || stack.isEmpty()) return;
-        DyedItemColor dyed = stack.get(DataComponents.DYED_COLOR);
-        int vanilla = dyed != null ? 0xFF000000 | (dyed.rgb() & 0xFFFFFF) : 0;
-        int colour = IcantpyBridge.INSTANCE.customLeatherColor(stack, vanilla);
-        if (colour == vanilla) return;
-        stack.set(DataComponents.DYED_COLOR, new DyedItemColor(colour & 0xFFFFFF));
+        try {
+            ItemStack stack = cir.getReturnValue();
+            if (stack == null || stack.isEmpty()) return;
+            // Read the backing map so a DYED_COLOR overlay cannot make this look like a no-op.
+            DyedItemColor dyed = stack.getComponents().get(DataComponents.DYED_COLOR);
+            int vanilla = dyed != null ? 0xFF000000 | (dyed.rgb() & 0xFFFFFF) : 0;
+            int colour = IcantpyBridge.INSTANCE.customLeatherColor(stack, vanilla);
+            if (colour == vanilla) return;
+            stack.set(DataComponents.DYED_COLOR, new DyedItemColor(colour & 0xFFFFFF));
+        } finally {
+            IcantpyBridge.INSTANCE.endAppearanceOwner();
+        }
     }
 }

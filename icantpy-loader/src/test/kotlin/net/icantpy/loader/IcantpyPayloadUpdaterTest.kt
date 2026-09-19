@@ -83,7 +83,7 @@ class IcantpyPayloadUpdaterTest {
     fun prefersLocalUpdateServerBeforePublicUrl() {
         assertEquals(
             listOf(
-                "http://127.0.0.1:8965/icantpy/icantpy-1.0.0.jar",
+                "http://127.0.0.1:8964/icantpy/icantpy-1.0.0.jar",
                 "https://mod.v7ren.com/icantpy/icantpy-1.0.0.jar",
             ),
             IcantpyPayloadUpdater.payloadDownloadUrls(

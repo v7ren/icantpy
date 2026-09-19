@@ -1,19 +1,22 @@
 package net.icantpy.gui
 
 import com.mojang.blaze3d.platform.InputConstants
-import net.icantpy.gui.configUI.IcantpyConfigScreen
-import net.icantpy.gui.configUI.IcantpyHudEditorScreen
-import net.icantpy.gui.configUI.ConfigTab
-import net.icantpy.gui.configUI.ConfigUiSession
+import net.icantpy.gui.config.IcantpyConfigScreen
+import net.icantpy.gui.config.IcantpyHudEditorScreen
+import net.icantpy.gui.config.ConfigUiSession
+import net.icantpy.gui.customize.CustomizeScreen
 import net.icantpy.gui.neurename.NeurenameScreen
-import net.icantpy.modules.impl.appearance.CustomRename
-import net.icantpy.modules.impl.appearance.CustomRenameEditorSession
-import net.icantpy.modules.impl.timer.TimerHud
-import net.icantpy.modules.impl.waypoint.CommandWaypoints
-import net.icantpy.modules.impl.stats.StatsArmor
-import net.icantpy.modules.impl.loadout.Loadout
+import net.icantpy.api.IcantpyKeyBindings
+import net.icantpy.cosmetics.items.CustomRename
+import net.icantpy.cosmetics.items.CustomRenameEditorSession
+import net.icantpy.dungeon.timer.TickTimers
+import net.icantpy.dungeon.timer.TimerHud
+import net.icantpy.qol.waypoint.CommandWaypoints
+import net.icantpy.qol.stats.StatsArmor
+import net.icantpy.qol.loadout.Loadout
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.Screen
@@ -62,6 +65,17 @@ object IcantpyGui {
                 category,
             ),
         )
+        IcantpyKeyBindings.put(
+            IcantpyKeyBindings.FREELOOK,
+            KeyMappingHelper.registerKeyMapping(
+                KeyMapping(
+                    "key.icantpy.freelook",
+                    InputConstants.Type.KEYSYM,
+                    GLFW.GLFW_KEY_F6,
+                    category,
+                ),
+            ),
+        )
         ClientTickEvents.END_CLIENT_TICK.register {
             val key = configKey
             if (key != null) {
@@ -96,6 +110,7 @@ object IcantpyGui {
             GuiPending.None -> Unit
             GuiPending.OpenConfig -> showConfig()
             GuiPending.OpenItemCustomize -> showItemCustomizeScreen()
+            GuiPending.OpenCustomize -> showCustomizeScreen()
             GuiPending.Close -> {
                 if (isOurScreen(McUi.currentScreen(mc))) {
                     McUi.setScreen(mc, null)
@@ -111,10 +126,27 @@ object IcantpyGui {
         McUi.releaseMouse(mc)
     }
 
+    fun requestPayloadReload() {
+        TickTimers.persist()
+        CustomRename.persist()
+        if (!FabricLoader.getInstance().isModLoaded("icantpy_loader")) {
+            Minecraft.getInstance().player?.sendSystemMessage(
+                Component.literal("icantpy reload needs the loader"),
+            )
+            return
+        }
+        closeIfOpen()
+        Minecraft.getInstance().execute { invokeLoaderReload() }
+    }
+
     fun closeIfOpen() {
         queue.clear()
         CustomRenameEditorSession.close()
         val mc = Minecraft.getInstance()
+        val screen = McUi.currentScreen(mc)
+        if (screen is net.icantpy.dungeon.leap.LeapMenuScreen && screen.liveContainerMenu() != null) {
+            mc.player?.closeContainer()
+        }
         if (isOurScreen(McUi.currentScreen(mc))) {
             McUi.setScreen(mc, null)
         }
@@ -128,8 +160,14 @@ object IcantpyGui {
     }
 
     fun showRename() {
-        ConfigUiSession.select(ConfigTab.RENAME)
+        ConfigUiSession.selectCosmeticsItems()
         queue.requestOpen()
+    }
+
+    fun showShards() {
+        queue.clear()
+        ConfigUiSession.selectShards()
+        showConfig()
     }
 
     /** Captures the held item and queues opening the NEU-style editor on the client thread. */
@@ -153,6 +191,33 @@ object IcantpyGui {
         McUi.releaseMouse(mc)
     }
 
+    /** Opens the Skyblocker-style tabbed customizer (`,icantpy custom`). */
+    fun showCustomize() {
+        CustomRenameEditorSession.capture(CustomRename.heldItem())
+        queue.requestCustomize()
+    }
+
+    private fun showCustomizeScreen() {
+        val mc = Minecraft.getInstance()
+        McUi.setScreen(mc, CustomizeScreen(McUi.currentScreen(mc), false))
+        McUi.releaseMouse(mc)
+    }
+
     internal fun isOurScreen(screen: Screen?): Boolean =
-        screen is IcantpyConfigScreen || screen is IcantpyHudEditorScreen || screen is NeurenameScreen
+        screen is IcantpyConfigScreen || screen is IcantpyHudEditorScreen ||
+            screen is NeurenameScreen || screen is CustomizeScreen ||
+            screen is net.icantpy.dungeon.leap.LeapMenuEditorScreen || screen is net.icantpy.dungeon.leap.LeapMenuScreen
+
+    private fun invokeLoaderReload() {
+        try {
+            val clazz = Class.forName("net.icantpy.loader.IcantpyChat")
+            val instance = clazz.getField("INSTANCE").get(null)
+            clazz.getMethod("handleChatMessage", String::class.java).invoke(instance, ".icantpy reload")
+        } catch (exception: Exception) {
+            val cause = exception.cause ?: exception
+            Minecraft.getInstance().player?.sendSystemMessage(
+                Component.literal("icantpy reload failed: ${cause.message ?: cause.javaClass.simpleName}"),
+            )
+        }
+    }
 }

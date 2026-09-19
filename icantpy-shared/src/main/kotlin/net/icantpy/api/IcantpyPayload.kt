@@ -6,8 +6,10 @@ import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
+import net.minecraft.world.entity.Entity
 import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.level.block.state.BlockState
+import net.minecraft.client.renderer.entity.state.EntityRenderState
 
 interface IcantpyPayload {
     fun onLoad()
@@ -31,6 +33,17 @@ interface IcantpyPayload {
     fun onRenderWorld() {}
 
     fun onRenderHud(graphics: GuiGraphicsExtractor) {}
+
+    /** Returns a client-only render proxy for an entity, or null to keep vanilla rendering. */
+    fun renderProxy(entity: Entity, partialTick: Float): Entity? = null
+
+    /** Adapts a proxy's vanilla render state to the local player's render state. */
+    fun adaptRenderState(
+        entity: Entity,
+        proxy: Entity,
+        state: EntityRenderState,
+        partialTick: Float,
+    ) {}
 
     fun onTick() {}
 
@@ -57,6 +70,14 @@ interface IcantpyPayload {
 
     /** Extra client-side tooltip lines (custom lore) for an item, empty when none. */
     fun customTooltip(stack: net.minecraft.world.item.ItemStack): List<Component> = emptyList()
+
+    /** Skyblocker-style component overrides. */
+    fun customItemModel(stack: net.minecraft.world.item.ItemStack): String? = null
+
+    fun customHeadTexture(stack: net.minecraft.world.item.ItemStack): String? = null
+
+    /** Custom armour trim (an {@code ArmorTrim}) or null. Typed as Any to keep the ABI simple. */
+    fun customTrim(stack: net.minecraft.world.item.ItemStack): Any? = null
 
     fun wantsLeapMenu(title: String): Boolean = false
 

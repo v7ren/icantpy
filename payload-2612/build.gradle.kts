@@ -7,7 +7,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-version = "1.0.3.24"
+version = "1.0.3.92"
 group = "net.icantpy"
 
 base {
@@ -36,6 +36,7 @@ sourceSets {
         java.srcDir(file("$dungeonsDir/src/main/java"))
         java.srcDir(file("$sharedDir/src/main/java"))
         resources.srcDir(file("$dungeonsDir/src/main/resources"))
+        resources.srcDir(file("$sharedDir/src/main/resources"))
     }
 }
 

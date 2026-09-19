@@ -10,11 +10,16 @@ object IcantpyRuntimeContract {
 
     val CAPABILITIES: Set<String> = setOf(
         "lifecycle.tick",
+        "lifecycle.start_tick",
+        "lifecycle.join",
         "lifecycle.disconnect",
         "network.inbound",
         "commands.root",
         "input.native",
+        "input.action",
+        "input.keybinds",
         "gui.menu",
+        "gui.screen",
         "render.hud",
         "render.world",
         "appearance.item",
@@ -183,6 +188,21 @@ internal fun queryLegacy(payload: IcantpyPayload, query: IcantpyRuntimeQuery): I
     "appearance.item.tooltip" -> {
         val stack = query.value<net.minecraft.world.item.ItemStack>("stack") ?: return passQuery()
         IcantpyQueryResult(IcantpyDispatchResult.HANDLED, payload.customTooltip(stack))
+    }
+    "appearance.item.model" -> {
+        val stack = query.value<net.minecraft.world.item.ItemStack>("stack") ?: return passQuery()
+        val value = payload.customItemModel(stack) ?: return passQuery()
+        IcantpyQueryResult(IcantpyDispatchResult.HANDLED, value)
+    }
+    "appearance.item.head" -> {
+        val stack = query.value<net.minecraft.world.item.ItemStack>("stack") ?: return passQuery()
+        val value = payload.customHeadTexture(stack) ?: return passQuery()
+        IcantpyQueryResult(IcantpyDispatchResult.HANDLED, value)
+    }
+    "appearance.item.trim" -> {
+        val stack = query.value<net.minecraft.world.item.ItemStack>("stack") ?: return passQuery()
+        val value = payload.customTrim(stack) ?: return passQuery()
+        IcantpyQueryResult(IcantpyDispatchResult.HANDLED, value)
     }
     else -> passQuery()
 }

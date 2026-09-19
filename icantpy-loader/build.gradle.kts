@@ -19,6 +19,7 @@ repositories {
 sourceSets {
     named("main") {
         java.srcDir(file("${projectDir.parent}/icantpy-shared/src/main/java"))
+        resources.srcDir(file("${projectDir.parent}/icantpy-shared/src/main/resources"))
     }
 }
 
@@ -64,7 +65,13 @@ tasks.test {
 tasks.jar {
     val forbiddenPrefixes = listOf(
         "net/icantpy/modules/",
+        "net/icantpy/dungeon/",
+        "net/icantpy/cosmetics/",
+        "net/icantpy/qol/",
+        "net/icantpy/slayer/",
+        "net/icantpy/hud/",
         "net/icantpy/gui/",
+        "net/icantpy/util/",
         "org/jetbrains/compose/",
         "org/jetbrains/skiko/",
         "androidx/",

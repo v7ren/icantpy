@@ -1,7 +1,7 @@
 package net.icantpy.gui.neurename
 
-import net.icantpy.modules.impl.appearance.ItemCustomizeColor
-import net.icantpy.modules.impl.appearance.ItemCustomizeColorEvaluator
+import net.icantpy.cosmetics.items.ItemCustomizeColor
+import net.icantpy.cosmetics.items.ItemCustomizeColorEvaluator
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import org.lwjgl.glfw.GLFW

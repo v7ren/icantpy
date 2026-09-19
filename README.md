@@ -10,7 +10,15 @@ The `icantpy-loader` jar downloads and hot-reloads the payload, so most feature 
 
 ### Clocks
 
-HUD timers for F7/M7:
+Dungeon phase clocks for F1/F7 and their Master Mode variants:
+
+- F1: Undead, Bonzo, Boss
+- F2: First Phase, Second Phase, Boss
+- F3: Guardians, Human, Guardian, Boss
+- F4: Thorn, Boss
+- F5: Livid, Boss
+- F6: Terracottas, Giants, Sadan, Boss
+- F7: Maxor spawn, Storm, Terminals, S1–S4, Goldor, Necron, Boss
 
 - Storm pad, lightning, purple-yellow, and Storm elapsed
 - Goldor tick and start
@@ -21,7 +29,7 @@ Positions, fonts, prefixes, and tick vs seconds are configurable. A HUD editor l
 
 ### Alerts
 
-When a clock hits a chosen time:
+When any dungeon phase clock or mechanic clock hits a chosen time:
 
 - Flash on-screen text
 - Play a vanilla sound, or a custom `.wav` from `config/icantpy/sounds/`
@@ -47,14 +55,58 @@ Route triggers arm a local center card from:
 
 The server inventory order stays unchanged. Optional party announce, lock HUD, and boss-death notifier.
 
+Leap → Menu includes a configurable target gap and an editor for dragging all five cards.
+Large corner click regions have dead zones around the center and between quadrants; enable
+Only visible cards for bounded hit areas. Moving cards also switches to their visible bounds.
+Right-click in the layout editor resets positions, and Esc returns to configuration.
+
+Optional left-click auto leap opens the real Spirit Leap menu and clicks the captured oriented
+target after a configurable delay (100 ms by default). Boss only is enabled by default.
+The separate Door opener leap toggle uses the latest named Wither/Blood door opener outside
+boss, with the same delay. Anonymous Blood-door messages retain the last named opener.
+Both automation toggles are off by default; missing target heads never select another player.
+Current loaders intercept left clicks immediately. Older loaders can use the payload tick
+fallback, which may miss taps shorter than a client tick and allows the initial vanilla swing.
+
 ### Rename
 
-NEU-style item customizer for held items. Opens from `/icantpy rename`.
+NEU-style item customizer for held items. Opens from `/icantpy rename` or `/icantpy custom`.
 
 - Formatted names (chroma and master-star glyphs)
 - Custom tooltip
 - Glint on/off/color
-- Leather dye
+- Leather dye (including Hypixel animated UUID-less frames, matched by UUID, SkyBlock id, or name)
+- Optional sharing so other icantpy users see your worn cosmetics (`/icantpy share on`, or Cosmetics → Items)
+
+Dyes and models apply to your items only. Other players' armor stays vanilla unless they also run icantpy and publish.
+
+### Morph
+
+Change only your local player model with `/icantpy morph <entity>`, for example `/icantpy morph cat`.
+Use `/icantpy morph off` to restore the player model. Other icantpy clients render the same morph;
+worn dyes and names still need **Share with other icantpy users**. Armor is shown only for humanoid targets whose
+renderer supports armor; non-humanoid targets such as cats never show your armor.
+
+`/icantpy morph camera on` follows the disguise eye height. Cosmetics → Morph → Camera alignment
+switches between two saved modes (or `/icantpy morph camera mode crosshair|look`):
+
+- **Shifted crosshair** keeps the camera/model parallel to vanilla facing and projects the crosshair
+  and attack indicator onto the actual vanilla target, like the original mob-eye mode.
+- **Look-at camera** follows a fixed point four blocks along the player's original vanilla look
+  direction, not the hit block. Yaw stays vanilla; only cosmetic pitch compensates for eye height.
+  Changing hit-block distance no longer rotates the camera or mob model. The vanilla crosshair
+  and attack indicator stay fixed at screen center. This is the default.
+
+Only shifted-crosshair mode projects the actual vanilla target onto the HUD. In look-at mode,
+the centered crosshair can differ from the actual vanilla target/block outline at other distances.
+Neither changes real player yaw/pitch, picking, reach, hitboxes, movement, or gameplay packets.
+Changing camera-only settings does not publish appearance updates. Look-at requires loader `1.0.3.30`
+or newer; if already installed, use `/icantpy reload` without replacing it or restarting.
+Older loaders with the HUD hook can use shifted-crosshair mode. Selecting look-at keeps the
+crosshair centered even without the camera-look hook; loaders without the HUD hook keep vanilla
+first-person height. The selected mode remains saved for a future loader upgrade.
+Client-side rendering does not imply Hypixel permission; altered eye height can expose normally hidden
+views. Do not treat this mode as Hypixel-approved or ban-safe.
 
 ### Stats armor
 
@@ -65,6 +117,20 @@ Cards can show Bonzo Mask, Spirit Mask, and Phoenix Pet cooldown/invuln timers.
 ### Loadouts
 
 Fast `/loadout` menu for clicking loadout icons without the vanilla chest grid.
+
+### Attribute shards
+
+`/icantpy shards` opens QoL → Shards in the main icantpy GUI, using your chosen layout, theme and fonts. Search by shard or ability, switch between all and missing entries, scroll through the list, and use Bazaar on a row to buy that shard. The page also links to `/am` Advanced and `/huntingbox`, and converts pasted bullet lists into an importable checklist.
+
+The default checklist contains all 45 bundled entries. Open `/am` Advanced, then manually visit every page, and visit all `/huntingbox` pages to scan. Scan progress is session-only and resets on disconnect/profile change; an unknown level (`?`) means the level is unread, while box counts may still be known.
+
+Import accepts direct JSON, Base64 export, or user bullet lists. For bullet lists, the first parenthetical mob name is preferred as the shard name; otherwise the ability or name is used. Targets must be 1–10 and default to 10. Base64 exports are UTF-8 JSON and can be shared directly. For example:
+
+```json
+{ "version": 1, "name": "Blaze Slayer", "shards": [{ "name": "Flash", "targetLevel": 10 }] }
+```
+
+The offline catalog is bundled from [NEU's attribute shard data](https://raw.githubusercontent.com/NotEnoughUpdates/NotEnoughUpdates-REPO/master/constants/attribute_shards.json).
 
 ### Look
 

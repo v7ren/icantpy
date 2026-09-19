@@ -1,15 +1,15 @@
 package net.icantpy.gui.neurename
 
 import net.icantpy.gui.McUi
-import net.icantpy.modules.impl.appearance.CustomRename
-import net.icantpy.modules.impl.appearance.CustomRenameEditorSession
-import net.icantpy.modules.impl.appearance.CustomRenameText
-import net.icantpy.modules.impl.appearance.ItemCustomizeBaseline
-import net.icantpy.modules.impl.appearance.ItemCustomizeClock
-import net.icantpy.modules.impl.appearance.ItemCustomizeColor
-import net.icantpy.modules.impl.appearance.ItemCustomizeColorEvaluator
-import net.icantpy.modules.impl.appearance.ItemCustomizeState
-import net.icantpy.modules.impl.appearance.RenameTextEditor
+import net.icantpy.cosmetics.items.CustomRename
+import net.icantpy.cosmetics.items.CustomRenameEditorSession
+import net.icantpy.cosmetics.items.CustomRenameText
+import net.icantpy.cosmetics.items.ItemCustomizeBaseline
+import net.icantpy.cosmetics.items.ItemCustomizeClock
+import net.icantpy.cosmetics.items.ItemCustomizeColor
+import net.icantpy.cosmetics.items.ItemCustomizeColorEvaluator
+import net.icantpy.cosmetics.items.ItemCustomizeState
+import net.icantpy.cosmetics.items.RenameTextEditor
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.Screen
@@ -19,6 +19,8 @@ import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.Style
 import org.lwjgl.glfw.GLFW
+
+private const val TOOLTIP_LINE_HEIGHT = 10
 
 /** 1:1 reproduction of NEU's GuiItemCustomize for modern Minecraft. */
 class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
@@ -35,6 +37,14 @@ class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
     private var tooltipOpen = false
     private var tooltipEditor = RenameTextEditor()
     private var tooltipStripY = 0
+    private var tooltipScroll = 0
+    private var tooltipMaxScroll = 0
+    private var lastTooltipCursor = -1
+    private var tooltipPanelX = 0
+    private var tooltipPanelY = 0
+    private var tooltipPanelW = 0
+    private var tooltipPanelH = 0
+    private var tooltipTextTop = 0
     private var reveal = 0f
     private var lastFrame = 0L
     private var renderHeight = 0
@@ -140,45 +150,95 @@ class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
     }
 
     private fun paintTooltipEditor(graphics: GuiGraphicsExtractor) {
-        val panelW = 230
-        val panelH = 120
-        val px = (width - panelW) / 2
-        val py = (height - panelH) / 2
-        NeurenameDraw.floatingRectDark(graphics, px, py, panelW, panelH)
-        NeurenameDraw.centered(graphics, formatted("\u00A7d\u00A7lCustom Tooltip"), width / 2, py + 8 + 3, 0x404040, shadow = true)
-        graphics.fill(px + 8, py + 26, px + panelW - 8, py + panelH - 20, 0xFF000000.toInt())
+        tooltipPanelW = (width - 40).coerceIn(200, 380)
+        tooltipPanelH = (height - 40).coerceIn(120, 240)
+        tooltipPanelX = (width - tooltipPanelW) / 2
+        tooltipPanelY = (height - tooltipPanelH) / 2
+        NeurenameDraw.floatingRectDark(graphics, tooltipPanelX, tooltipPanelY, tooltipPanelW, tooltipPanelH)
+        NeurenameDraw.centered(graphics, formatted("\u00A7d\u00A7lCustom Tooltip"), width / 2, tooltipPanelY + 8 + 3, 0x404040, shadow = true)
+
+        val textTop = tooltipPanelY + 26
+        val textBottom = tooltipPanelY + tooltipPanelH - 20
+        tooltipTextTop = textTop
+        graphics.fill(tooltipPanelX + 8, textTop, tooltipPanelX + tooltipPanelW - 8, textBottom, 0xFF000000.toInt())
+
+        val lines = tooltipEditor.text.split('\n')
+        val visible = ((textBottom - textTop - 4) / TOOLTIP_LINE_HEIGHT).coerceAtLeast(1)
+        val maxScroll = (lines.size - visible).coerceAtLeast(0)
+        tooltipMaxScroll = maxScroll
+        val (cursorLine, cursorCol) = tooltipCursorLineCol(lines)
+        if (tooltipEditor.cursor != lastTooltipCursor) {
+            // Only follow the caret when it moves, so manual scrolling is not fought.
+            if (cursorLine < tooltipScroll) tooltipScroll = cursorLine
+            if (cursorLine >= tooltipScroll + visible) tooltipScroll = cursorLine - visible + 1
+            lastTooltipCursor = tooltipEditor.cursor
+        }
+        tooltipScroll = tooltipScroll.coerceIn(0, maxScroll)
 
         val font = Minecraft.getInstance().font
-        val lines = tooltipEditor.text.split('\n')
-        var cursorLine = 0
-        var cursorCol = 0
-        run {
-            var remaining = tooltipEditor.cursor
-            for ((index, line) in lines.withIndex()) {
-                if (remaining <= line.length) {
-                    cursorLine = index
-                    cursorCol = remaining
-                    return@run
-                }
-                remaining -= line.length + 1
-            }
-            cursorLine = lines.lastIndex
-            cursorCol = lines.lastOrNull()?.length ?: 0
-        }
-        graphics.enableScissor(px + 8, py + 26, px + panelW - 8, py + panelH - 20)
-        lines.forEachIndexed { index, line ->
-            val y = py + 30 + index * 10
-            if (y > py + panelH - 24) return@forEachIndexed
-            graphics.text(font, formatted(line.ifEmpty { " " }), px + 12, y, 0xFFFFFFFF.toInt())
+        graphics.enableScissor(tooltipPanelX + 8, textTop, tooltipPanelX + tooltipPanelW - 8, textBottom)
+        for (row in 0 until visible) {
+            val index = tooltipScroll + row
+            if (index >= lines.size) break
+            graphics.text(font, formatted(lines[index].ifEmpty { " " }), tooltipPanelX + 12, textTop + 2 + row * TOOLTIP_LINE_HEIGHT, 0xFFFFFFFF.toInt())
         }
         graphics.disableScissor()
+
         if (System.currentTimeMillis() % 1000 > 500) {
             val colText = lines.getOrElse(cursorLine) { "" }.take(cursorCol)
-            val cx = px + 12 + font.width(formatted(colText))
-            val cy = py + 29 + cursorLine * 10
-            graphics.fill(cx, cy, cx + 1, cy + 10, 0xFFFFFFFF.toInt())
+            val cx = tooltipPanelX + 12 + font.width(formatted(colText))
+            val cy = textTop + 1 + (cursorLine - tooltipScroll) * TOOLTIP_LINE_HEIGHT
+            graphics.fill(cx, cy, cx + 1, cy + TOOLTIP_LINE_HEIGHT, 0xFFFFFFFF.toInt())
         }
-        NeurenameDraw.text(graphics, "\u00A78&& colour codes, Enter = new line, Esc = done", px + 8, py + panelH - 14, 0xFF808080.toInt())
+
+        if (lines.size > visible) {
+            val trackTop = textTop + 2
+            val trackH = (textBottom - textTop - 4).coerceAtLeast(1)
+            val thumbH = (trackH * visible / lines.size).coerceAtLeast(8)
+            val thumbY = trackTop + (trackH - thumbH) * tooltipScroll / maxScroll.coerceAtLeast(1)
+            graphics.fill(tooltipPanelX + tooltipPanelW - 7, trackTop, tooltipPanelX + tooltipPanelW - 5, textBottom - 2, 0x40FFFFFF)
+            graphics.fill(tooltipPanelX + tooltipPanelW - 7, thumbY, tooltipPanelX + tooltipPanelW - 5, thumbY + thumbH, 0xFFAAAAAA.toInt())
+        }
+
+        graphics.text(
+            font,
+            formatted("\u00A78&& colours, Enter = new line, wheel = scroll, Esc = done"),
+            tooltipPanelX + 8,
+            tooltipPanelY + tooltipPanelH - 14,
+            0xFF808080.toInt(),
+        )
+    }
+
+    private fun tooltipCursorLineCol(lines: List<String>): Pair<Int, Int> {
+        var remaining = tooltipEditor.cursor
+        for ((index, line) in lines.withIndex()) {
+            if (remaining <= line.length) return index to remaining
+            remaining -= line.length + 1
+        }
+        val last = lines.lastIndex.coerceAtLeast(0)
+        return last to (lines.getOrNull(last)?.length ?: 0)
+    }
+
+    private fun tooltipCursorFromMouse(mouseX: Int, mouseY: Int): Int {
+        val lines = tooltipEditor.text.split('\n')
+        val line = (tooltipScroll + (mouseY - tooltipTextTop - 1) / TOOLTIP_LINE_HEIGHT).coerceIn(0, lines.lastIndex.coerceAtLeast(0))
+        val target = lines.getOrElse(line) { "" }
+        val font = Minecraft.getInstance().font
+        val relX = mouseX - (tooltipPanelX + 12)
+        var col = 0
+        while (col < target.length && font.width(formatted(target.substring(0, col + 1))) <= relX) col++
+        var index = 0
+        for (i in 0 until line) index += lines[i].length + 1
+        return (index + col).coerceIn(0, tooltipEditor.text.length)
+    }
+
+    private fun moveTooltipVertical(delta: Int): Int {
+        val lines = tooltipEditor.text.split('\n')
+        val (line, col) = tooltipCursorLineCol(lines)
+        val target = (line + delta).coerceIn(0, lines.lastIndex.coerceAtLeast(0))
+        var index = 0
+        for (i in 0 until target) index += lines[i].length + 1
+        return index + col.coerceAtMost(lines[target].length)
     }
 
     private fun paintNameField(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, y: Int) {
@@ -271,11 +331,15 @@ class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
         val mx = event.x().toInt()
         val my = event.y().toInt()
         if (tooltipOpen) {
-            val panelW = 230
-            val panelH = 120
-            val px = (width - panelW) / 2
-            val py = (height - panelH) / 2
-            if (mx !in px until px + panelW || my !in py until py + panelH) tooltipOpen = false
+            if (mx in tooltipPanelX until tooltipPanelX + tooltipPanelW &&
+                my in tooltipPanelY until tooltipPanelY + tooltipPanelH
+            ) {
+                if (my in tooltipTextTop until tooltipPanelY + tooltipPanelH - 20) {
+                    tooltipEditor = tooltipEditor.moveTo(tooltipCursorFromMouse(mx, my), false)
+                }
+                return true
+            }
+            tooltipOpen = false
             return true
         }
         val active = picker
@@ -318,7 +382,11 @@ class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
                     tooltipEditor = RenameTextEditor()
                     applyLive()
                 } else {
-                    tooltipEditor = RenameTextEditor().withText(state.customTooltip)
+                    val seed = state.customTooltip.ifBlank { existingTooltipText() }
+                    tooltipEditor = RenameTextEditor().withText(seed).moveTo(0, false)
+                    tooltipScroll = 0
+                    tooltipMaxScroll = 0
+                    lastTooltipCursor = 0
                     tooltipOpen = true
                 }
             }
@@ -341,6 +409,20 @@ class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
         return true
     }
 
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        if (tooltipOpen) {
+            val delta = when {
+                scrollY > 0 -> -1
+                scrollY < 0 -> 1
+                else -> 0
+            }
+            tooltipScroll = (tooltipScroll + delta).coerceIn(0, tooltipMaxScroll)
+            lastTooltipCursor = tooltipEditor.cursor
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+    }
+
     override fun keyPressed(event: KeyEvent): Boolean {
         if (tooltipOpen) {
             when (event.key()) {
@@ -350,6 +432,8 @@ class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
                 GLFW.GLFW_KEY_DELETE -> editTooltip(tooltipEditor.delete())
                 GLFW.GLFW_KEY_LEFT -> editTooltip(tooltipEditor.moveHorizontal(-1, shift(event)))
                 GLFW.GLFW_KEY_RIGHT -> editTooltip(tooltipEditor.moveHorizontal(1, shift(event)))
+                GLFW.GLFW_KEY_UP -> editTooltip(tooltipEditor.moveTo(moveTooltipVertical(-1), shift(event)))
+                GLFW.GLFW_KEY_DOWN -> editTooltip(tooltipEditor.moveTo(moveTooltipVertical(1), shift(event)))
                 GLFW.GLFW_KEY_HOME -> editTooltip(tooltipEditor.moveHome(shift(event)))
                 GLFW.GLFW_KEY_END -> editTooltip(tooltipEditor.moveEnd(shift(event)))
                 GLFW.GLFW_KEY_V -> if (control(event)) {
@@ -444,6 +528,13 @@ class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
         editor = RenameTextEditor().withText(nameText)
     }
 
+    /** Seeds the tooltip editor with the item's own lore (not other mods' additions). */
+    private fun existingTooltipText(): String {
+        val stack = session?.stack ?: return ""
+        val lore = stack.components.get(net.minecraft.core.component.DataComponents.LORE) ?: return ""
+        return lore.lines().joinToString("\n") { CustomRenameText.toLegacy(it) }
+    }
+
     private fun editTooltip(next: RenameTextEditor) {
         val converted = tooltipShortcuts(next.text)
         tooltipEditor = RenameTextEditor(converted, next.cursor.coerceAtMost(converted.length))
@@ -451,14 +542,13 @@ class NeurenameScreen : Screen(Component.literal("NEU Item Customizer")) {
         applyLive()
     }
 
-    /** Typed-tooltip shortcuts (newlines preserved, unlike the single-line name editor). */
+    /** Typed-tooltip shortcuts (newlines preserved, no length cap, unlike the name editor). */
     private fun tooltipShortcuts(raw: String): String = raw
         .replace("&&", "\u00A7")
         .replace("**", CustomRenameText.MASTER_STAR_GLYPH.toString())
         .replace(Regex("\\*([1-9])")) { match ->
             (CustomRenameText.MASTER_STAR_FIRST.code + (match.groupValues[1][0].code - '1'.code)).toChar().toString()
         }
-        .take(600)
 
     private fun setGlint(value: Boolean) {
         state = state.setGlint(value)

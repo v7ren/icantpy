@@ -4,6 +4,7 @@ internal enum class GuiPending {
     None,
     OpenConfig,
     OpenItemCustomize,
+    OpenCustomize,
     Close,
 }
 
@@ -20,6 +21,10 @@ internal class GuiOpenQueue {
 
     fun requestItemCustomize() {
         pending = GuiPending.OpenItemCustomize
+    }
+
+    fun requestCustomize() {
+        pending = GuiPending.OpenCustomize
     }
 
     fun clear() {

@@ -32,7 +32,7 @@ object IcantpyPayloadUpdater {
         .followRedirects(HttpClient.Redirect.NORMAL)
         .build()
 
-    const val LOCAL_UPDATE_BASE: String = "http://127.0.0.1:8965/icantpy"
+    const val LOCAL_UPDATE_BASE: String = "http://127.0.0.1:8964/icantpy"
     const val DOWNLOAD_CHUNK_BYTES: Long = 32L * 1024 * 1024
     val HOST_ABI: String = IcantpyRuntimeContract.ABI
     val HOST_CAPABILITIES: Set<String> = IcantpyRuntimeContract.CAPABILITIES

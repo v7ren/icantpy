@@ -6,6 +6,8 @@ import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
+import net.minecraft.client.renderer.entity.state.EntityRenderState
+import net.minecraft.world.entity.Entity
 import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.level.block.state.BlockState
 
@@ -73,6 +75,28 @@ object IcantpyBridge {
         dispatch(IcantpyRuntimeEvent("render.hud", context = mapOf("graphics" to graphics)))
     }
 
+    fun renderProxy(entity: Entity, partialTick: Float): Entity? {
+        val payload = current ?: return null
+        return try {
+            payload.renderProxy(entity, partialTick)
+        } catch (_: AbstractMethodError) {
+            null
+        } catch (_: NoSuchMethodError) {
+            null
+        }
+    }
+
+    fun adaptRenderState(entity: Entity, proxy: Entity, state: EntityRenderState, partialTick: Float) {
+        val payload = current ?: return
+        try {
+            payload.adaptRenderState(entity, proxy, state, partialTick)
+        } catch (_: AbstractMethodError) {
+            // Compatibility with payloads compiled before render-state adaptation.
+        } catch (_: NoSuchMethodError) {
+            // Compatibility with payloads compiled before render-state adaptation.
+        }
+    }
+
     fun onTick() {
         dispatch(IcantpyRuntimeEvent("lifecycle.tick"))
     }
@@ -128,6 +152,49 @@ object IcantpyBridge {
     fun customTooltip(stack: net.minecraft.world.item.ItemStack): List<Component> =
         query(IcantpyRuntimeQuery("appearance.item.tooltip", context = mapOf("stack" to stack))).value as? List<Component>
             ?: emptyList()
+
+    fun customItemModel(stack: net.minecraft.world.item.ItemStack): String? =
+        query(IcantpyRuntimeQuery("appearance.item.model", context = mapOf("stack" to stack))).value as? String
+
+    fun customHeadTexture(stack: net.minecraft.world.item.ItemStack): String? =
+        query(IcantpyRuntimeQuery("appearance.item.head", context = mapOf("stack" to stack))).value as? String
+
+    fun customTrim(stack: net.minecraft.world.item.ItemStack): Any? =
+        query(IcantpyRuntimeQuery("appearance.item.trim", context = mapOf("stack" to stack))).value
+
+    /** Optional camera eye-height override for the local player's morph. Null keeps vanilla. */
+    fun cameraEyeHeight(entity: Entity?, vanilla: Float): Float? {
+        val value = query(
+            IcantpyRuntimeQuery(
+                "render.camera.eye_height",
+                context = mapOf("entity" to entity, "vanilla" to vanilla),
+            ),
+        ).value
+        return when (value) {
+            is Float -> value
+            is Double -> value.toFloat()
+            is Number -> value.toFloat()
+            else -> null
+        }
+    }
+
+    fun beginAppearanceOwner(entity: Any?) {
+        dispatch(
+            IcantpyRuntimeEvent(
+                "render.appearance.owner",
+                context = mapOf("entity" to entity, "phase" to "begin"),
+            ),
+        )
+    }
+
+    fun endAppearanceOwner() {
+        dispatch(
+            IcantpyRuntimeEvent(
+                "render.appearance.owner",
+                context = mapOf("phase" to "end"),
+            ),
+        )
+    }
 
     fun wantsLeapMenu(title: String): Boolean =
         query(IcantpyRuntimeQuery("gui.menu.wants.leap", context = mapOf("title" to title))).value == true

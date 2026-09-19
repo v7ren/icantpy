@@ -4,10 +4,16 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.BossHealthOverlay
+import net.minecraft.client.gui.components.tabs.MenuTabBar
+import net.minecraft.client.gui.components.tabs.Tab
+import net.minecraft.client.gui.components.tabs.TabManager
+import net.minecraft.client.gui.components.tabs.TabNavigationBar
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.world.inventory.ContainerInput
 
 object McCompat {
+    fun mainCamera(mc: Minecraft): net.minecraft.client.Camera = mc.gameRenderer.mainCamera()
+
     fun currentScreen(mc: Minecraft): Screen? = mc.gui.screen()
 
     fun setScreen(mc: Minecraft, screen: Screen?) {
@@ -16,6 +22,11 @@ object McCompat {
             mc.mouseHandler.releaseMouse()
         }
     }
+
+    fun buildTabBar(tabManager: TabManager, width: Int, tabs: List<Tab>): TabNavigationBar =
+        MenuTabBar.builder(tabManager, width).addTabs(*tabs.toTypedArray()).build()
+
+    fun arrangeTabBar(bar: TabNavigationBar, width: Int) = bar.arrangeElements(width)
 
     fun releaseMouse(mc: Minecraft) {
         mc.mouseHandler.releaseMouse()
