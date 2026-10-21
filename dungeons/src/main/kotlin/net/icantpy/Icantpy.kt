@@ -60,6 +60,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry
+import net.fabricmc.fabric.api.event.player.UseItemCallback
 import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -571,6 +572,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             PerfHud.render(graphics)
         }
         ClientTickEvents.START_CLIENT_TICK.register { QuaziiBeamDodge.startTick() }
+        // The loader forwards this as the "input.use.item" query; without it, standalone registers it directly.
+        UseItemCallback.EVENT.register { player, world, hand -> LeapOrient.onUseItem(player, world, hand) }
         ClientTickEvents.END_CLIENT_TICK.register {
             IcantpyLogFile.flush()
             ShardChecklistController.tick()

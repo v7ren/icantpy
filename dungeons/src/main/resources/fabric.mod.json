@@ -3,7 +3,7 @@
 	"id": "icantpy",
 	"version": "${version}",
 	"name": "icantpy",
-	"description": "F7/M7 tick timers and F6/M6 terracotta timers. Drop this jar in mods/ as a normal Fabric mod, or use icantpy-loader with this jar in icantpy/runtime/.",
+	"description": "Hypixel SkyBlock dungeon and slayer client helpers. Drop this jar in mods/ with Fabric API as a normal Fabric mod (no loader needed), or use icantpy-loader for in-game updates. Don't install both.",
 	"authors": [
 		"Me!"
 	],
