@@ -116,10 +116,51 @@ class IcantpyPayloadUpdaterTest {
     @Test
     fun rangeWindowsStayUnderCloudflareLimit() {
         val windows = IcantpyPayloadUpdater.rangeWindows(172_048_592L)
-        assertEquals(6, windows.size)
-        assertEquals(0L..33_554_431L, windows.first())
-        assertEquals(167_772_160L..172_048_591L, windows.last())
+        assertEquals(42, windows.size)
+        assertEquals(0L..4_194_303L, windows.first())
+        assertEquals(171_966_464L..172_048_591L, windows.last())
         assertTrue(windows.all { it.last - it.first + 1 <= IcantpyPayloadUpdater.DOWNLOAD_CHUNK_BYTES })
+    }
+
+    @Test
+    fun parseContentRangeStartReadsOffset() {
+        assertEquals(4_194_304L, IcantpyPayloadUpdater.parseContentRangeStart("bytes 4194304-8388607/91364768"))
+        assertEquals(0L, IcantpyPayloadUpdater.parseContentRangeStart("bytes 0-10/*"))
+        assertEquals(null, IcantpyPayloadUpdater.parseContentRangeStart(null))
+        assertEquals(null, IcantpyPayloadUpdater.parseContentRangeStart("junk"))
+    }
+
+    @Test
+    fun withRetriesRetriesUntilSuccessWithBackOff() {
+        val sleeps = ArrayList<Long>()
+        var calls = 0
+        val result = IcantpyPayloadUpdater.withRetries(6, sleep = { sleeps += it }) { attempt ->
+            calls++
+            if (attempt < 3) throw IllegalStateException("502") else "ok"
+        }
+        assertEquals("ok", result)
+        assertEquals(3, calls)
+        assertEquals(listOf(500L, 2_000L), sleeps)
+    }
+
+    @Test
+    fun withRetriesRethrowsTheLastFailure() {
+        var calls = 0
+        val error = assertFailsWith<IllegalStateException> {
+            IcantpyPayloadUpdater.withRetries<Unit>(3, sleep = {}) { attempt ->
+                calls++
+                throw IllegalStateException("fail $attempt")
+            }
+        }
+        assertEquals("fail 3", error.message)
+        assertEquals(3, calls)
+    }
+
+    @Test
+    fun retryDelayIsCapped() {
+        assertEquals(500L, IcantpyPayloadUpdater.retryDelayMs(1))
+        assertEquals(4_500L, IcantpyPayloadUpdater.retryDelayMs(3))
+        assertEquals(8_000L, IcantpyPayloadUpdater.retryDelayMs(10))
     }
 
     @Test

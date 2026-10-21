@@ -3,6 +3,7 @@ package net.icantpy.mixin
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class FreelookMixinContractTest {
@@ -16,11 +17,26 @@ class FreelookMixinContractTest {
     }
 
     @Test
-    fun mouseHandlerRedirectsLocalPlayerTurn() {
-        val text = mixin("MouseHandlerMixin.java")
-        assertTrue("@Redirect" in text)
-        assertTrue("turnPlayer" in text)
-        assertTrue("Lnet/minecraft/client/player/LocalPlayer;turn(DD)V" in text)
+    fun freelookConsumesTurnAtEntityTurnHeadNotInMouseHandler() {
+        val entityTurn = mixin("EntityTurnMixin.java")
+        assertTrue("@Mixin(Entity.class)" in entityTurn)
+        assertTrue("method = \"turn\"" in entityTurn)
+        assertTrue("cancellable = true" in entityTurn)
+        assertTrue("input.player.turn" in entityTurn)
+
+        // A @Redirect on LocalPlayer.turn inside MouseHandler.turnPlayer collides with other mods' MouseHandler mixins.
+        val mouseHandler = mixin("MouseHandlerMixin.java")
+        assertFalse("@Redirect" in mouseHandler)
+        assertFalse("LocalPlayer;turn(DD)V" in mouseHandler)
+    }
+
+    @Test
+    fun loaderMixinConfigsSkipFailedHooksInsteadOfCrashing() {
+        for (name in listOf("icantpy-accessor.mixins.json", "icantpy-loader.mixins.json")) {
+            val text = Files.readString(Path.of("src", "main", "resources", name))
+            assertTrue(Regex("\"required\"\\s*:\\s*false").containsMatchIn(text), "$name must not be required")
+            assertTrue(Regex("\"defaultRequire\"\\s*:\\s*0").containsMatchIn(text), "$name must default to require 0")
+        }
     }
 
     @Test

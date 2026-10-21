@@ -12,6 +12,15 @@ import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.level.block.state.BlockState
 
 object IcantpyBridge {
+    const val NO_GLOW: Int = -1
+
+    /** Maps a "render.entity.glow" query result to a color, or [NO_GLOW]. Pure, for tests. */
+    internal fun glowColorFromResult(result: IcantpyQueryResult): Int {
+        if (result.result == IcantpyDispatchResult.PASS) return NO_GLOW
+        val color = (result.value as? Number)?.toInt() ?: return NO_GLOW
+        return color and 0xFFFFFF
+    }
+
     @Volatile
     private var current: IcantpyPayload? = null
 
@@ -162,6 +171,20 @@ object IcantpyBridge {
     fun customTrim(stack: net.minecraft.world.item.ItemStack): Any? =
         query(IcantpyRuntimeQuery("appearance.item.trim", context = mapOf("stack" to stack))).value
 
+    /**
+     * Per-entity outline glow color (0xRRGGBB) for the entity id, or [NO_GLOW] when the entity
+     * keeps vanilla behaviour. Called once per entity per frame from render mixins; any failure
+     * is treated as "no glow" so rendering never crashes.
+     */
+    @JvmStatic
+    fun entityGlowColor(entityId: Int): Int = try {
+        glowColorFromResult(
+            query(IcantpyRuntimeQuery("render.entity.glow", context = mapOf("entityId" to entityId))),
+        )
+    } catch (_: Throwable) {
+        NO_GLOW
+    }
+
     /** Optional camera eye-height override for the local player's morph. Null keeps vanilla. */
     fun cameraEyeHeight(entity: Entity?, vanilla: Float): Float? {
         val value = query(
@@ -179,6 +202,8 @@ object IcantpyBridge {
     }
 
     fun beginAppearanceOwner(entity: Any?) {
+        // Checked before any event or map is built: this runs twice per entity per frame.
+        if (AppearanceOwnerHook.skipBegin()) return
         dispatch(
             IcantpyRuntimeEvent(
                 "render.appearance.owner",
@@ -188,6 +213,7 @@ object IcantpyBridge {
     }
 
     fun endAppearanceOwner() {
+        if (AppearanceOwnerHook.consumeSkippedEnd()) return
         dispatch(
             IcantpyRuntimeEvent(
                 "render.appearance.owner",

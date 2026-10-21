@@ -3,6 +3,8 @@ package net.icantpy.dungeon.leap
 import net.icantpy.dungeon.timer.TimerClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class LeapTriggerCardsTest {
     @Test
@@ -169,6 +171,36 @@ class LeapTriggerCardsTest {
     }
 
     @Test
+    fun deletingPresetCardRemovesItsRowsAndStaysDeletedAcrossApplyAndMigrate() {
+        val archer = preset("arch-maxor-bers")
+        val mage = preset("mage-maxor-bers")
+        val custom = archer.copy(id = "custom", presetId = null)
+        val settings = LeapOrientSettings(triggers = listOf(archer, mage, custom))
+        val card = LeapTriggerCards.group(listOf(archer, mage)).single()
+
+        val deleted = LeapTriggerCards.deletePresets(settings, card)
+
+        assertEquals(setOf(archer.id, mage.id), deleted.deletedPresetIds)
+        assertEquals(listOf(custom), deleted.triggers)
+        assertFalse(deleted.applyPreset().triggers.any { it.id == archer.id || it.id == mage.id })
+        assertFalse(LeapRoutePreset.migrate(deleted).triggers.any { it.id == archer.id || it.id == mage.id })
+    }
+
+    @Test
+    fun resetPresetRestoresDeletedPresets() {
+        val archer = preset("arch-maxor-bers")
+        val settings = LeapOrientSettings(
+            triggers = listOf(archer),
+            deletedPresetIds = setOf(archer.id),
+        )
+
+        val reset = settings.resetPreset()
+
+        assertTrue(reset.deletedPresetIds.isEmpty())
+        assertTrue(reset.triggers.any { it.id == archer.id })
+    }
+
+    @Test
     fun togglingCustomCardDoesNotCreateDisabledPresetIds() {
         val archer = preset("arch-maxor-bers")
         val custom = archer.copy(id = "custom", presetId = null)
@@ -203,4 +235,54 @@ class LeapTriggerCardsTest {
 
     private fun preset(id: String): LeapOrientTrigger =
         LeapOrientSettings.DEFAULT_TRIGGERS.first { it.id == id }
+
+    /** Four class members of one card: identical shared fields, differing only by id and class. */
+    private fun fourMembers(): List<LeapOrientTrigger> {
+        val base = preset("arch-maxor-bers")
+        return listOf(
+            base.copy(id = "m-arch", forClass = LeapDungeonClass.ARCHER),
+            base.copy(id = "m-bers", forClass = LeapDungeonClass.BERSERK),
+            base.copy(id = "m-heal", forClass = LeapDungeonClass.HEALER),
+            base.copy(id = "m-mage", forClass = LeapDungeonClass.MAGE),
+        )
+    }
+
+    @Test
+    fun groupedCardWithFourEligibleMembersActsOnce() {
+        val members = fourMembers()
+        val picked = LeapTriggerCards.pickOnePerCard(members, members)
+        assertEquals(1, picked.size)
+    }
+
+    @Test
+    fun allMembersOfAGroupedCardShareOneKey() {
+        val members = fourMembers()
+        val keys = members.map { LeapTriggerCards.cardKeyOf(it, members) }.toSet()
+        assertEquals(1, keys.size)
+    }
+
+    @Test
+    fun ungroupedCustomRowKeepsItsOwnIdAsKey() {
+        val custom = preset("arch-maxor-bers").copy(id = "custom-1", presetId = null)
+        assertEquals("custom-1", LeapTriggerCards.cardKeyOf(custom, listOf(custom)))
+        assertEquals(listOf(custom), LeapTriggerCards.pickOnePerCard(listOf(custom), listOf(custom)))
+    }
+
+    @Test
+    fun differentCardsOnTheSameEventEachRunOnceInCardOrder() {
+        val members = fourMembers()
+        val custom = preset("arch-maxor-bers").copy(id = "custom-1", presetId = null)
+        val all = members + custom
+        // Eligible order: a grouped member, the custom row, another member of the grouped card.
+        val picked = LeapTriggerCards.pickOnePerCard(listOf(members[0], custom, members[1]), all)
+        // Card order follows the first eligible member of each card, one row per card.
+        assertEquals(listOf(members[0].id, custom.id), picked.map { it.id })
+    }
+
+    @Test
+    fun testPickSelectsMemberForPlayersClassOrFirst() {
+        val members = fourMembers()
+        assertEquals("m-mage", LeapTriggerCards.pickTestMember(members, LeapDungeonClass.MAGE).id)
+        assertEquals("m-arch", LeapTriggerCards.pickTestMember(members, LeapDungeonClass.TANK).id)
+    }
 }

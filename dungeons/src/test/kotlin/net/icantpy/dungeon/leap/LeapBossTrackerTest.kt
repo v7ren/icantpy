@@ -7,18 +7,19 @@ import kotlin.test.assertTrue
 
 class LeapBossTrackerTest {
     @Test
-    fun observedMaxorDeathDeduplicatesLateStormIntro() {
+    fun observedMaxorDeathThenStormIntroFiresEachOnce() {
         val tracker = LeapBossTracker()
         repeat(121) { tracker.onServerTick() }
 
         assertTrue(tracker.onBossBars(listOf(LeapBossBar("§cMaxor", 1f))).isEmpty())
         assertEquals(LeapPhase.P1, tracker.phase)
         assertEquals(
-            listOf(LeapTriggerEvent.BOSS_STORM_START),
+            listOf(LeapTriggerEvent.MAXOR_DEATH),
             tracker.onBossBars(listOf(LeapBossBar("§cMaxor", 0f))),
         )
         assertEquals(LeapPhase.P2, tracker.phase)
         assertTrue(tracker.onBossBars(listOf(LeapBossBar("§cMaxor", 0f))).isEmpty())
+        assertEquals(listOf(LeapTriggerEvent.BOSS_STORM_START), tracker.onChat("[BOSS] Storm: Pathetic Maxor, just like expected."))
         assertTrue(tracker.onChat("[BOSS] Storm: Pathetic Maxor, just like expected.").isEmpty())
         assertEquals(LeapPhase.P2, tracker.phase)
     }
@@ -91,6 +92,7 @@ class LeapBossTrackerTest {
         assertEquals(LeapPhase.UNKNOWN, tracker.phase)
         assertFalse(tracker.necronBersActive)
 
+        tracker.onBossBars(listOf(LeapBossBar("Goldor", 0.5f)))
         tracker.onChat("The Core entrance is opening!")
         assertEquals(listOf(LeapTriggerEvent.BOSS_GOLDOR_DEATH),
             tracker.onBossBars(listOf(LeapBossBar("Goldor", 0f))))
@@ -99,5 +101,60 @@ class LeapBossTrackerTest {
         assertTrue(tracker.onBossBars(listOf(LeapBossBar("Necron", 0f))).isEmpty())
         assertEquals(LeapPhase.P4, tracker.phase)
         assertTrue(tracker.necronBersActive)
+    }
+
+    @Test
+    fun barFirstSeenAtZeroIsNotAMaxorDeath() {
+        val tracker = LeapBossTracker()
+        repeat(200) { tracker.onServerTick() }
+        assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))).isEmpty())
+        assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))).isEmpty())
+        assertEquals(LeapPhase.UNKNOWN, tracker.phase)
+    }
+
+    @Test
+    fun aliveThenZeroIsOneMaxorDeathPerFight() {
+        val tracker = LeapBossTracker()
+        repeat(121) { tracker.onServerTick() }
+        assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0.5f))).isEmpty())
+        assertEquals(listOf(LeapTriggerEvent.MAXOR_DEATH), tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))))
+        assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))).isEmpty())
+    }
+
+    @Test
+    fun lowButPositiveBarIsNotTreatedAsDeadOrAlive() {
+        val tracker = LeapBossTracker()
+        repeat(121) { tracker.onServerTick() }
+        assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0.02f))).isEmpty())
+        assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))).isEmpty())
+    }
+
+    @Test
+    fun maxorSpawnLineIsStartNotDeath() {
+        val tracker = LeapBossTracker()
+        val events = tracker.onChat("[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!")
+        assertEquals(listOf(LeapTriggerEvent.MAXOR_START), events)
+        assertEquals(LeapPhase.P1, tracker.phase)
+        assertFalse(LeapTriggerEvent.MAXOR_DEATH in events)
+        assertFalse(LeapTriggerEvent.BOSS_STORM_START in events)
+    }
+
+    @Test
+    fun maxorDeathLineFiresOnceAndBlocksLaterBarDeath() {
+        val tracker = LeapBossTracker()
+        repeat(121) { tracker.onServerTick() }
+        tracker.onBossBars(listOf(LeapBossBar("Maxor", 0.8f)))
+        assertEquals(listOf(LeapTriggerEvent.MAXOR_DEATH),
+            tracker.onChat("[BOSS] Maxor: I'M TOO YOUNG TO DIE AGAIN!"))
+        assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))).isEmpty())
+    }
+
+    @Test
+    fun witherKingDeathLineMapsOnce() {
+        val tracker = LeapBossTracker()
+        tracker.onChat("[BOSS] Wither King: I no longer wish to fight, but I know that will not stop you.")
+        assertEquals(listOf(LeapTriggerEvent.WITHER_KING_DEATH),
+            tracker.onChat("[BOSS] Wither King: Incredible. You did what I couldn't do myself."))
+        assertTrue(tracker.onChat("[BOSS] Wither King: Incredible. You did what I couldn't do myself.").isEmpty())
     }
 }

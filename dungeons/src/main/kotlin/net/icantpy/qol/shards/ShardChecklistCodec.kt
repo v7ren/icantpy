@@ -9,7 +9,13 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
-data class ShardChecklist(val name: String = "My shards", val shards: List<ShardChecklistEntry>, val version: Int = 1)
+/** [enabled] is the Attribute Shards master switch. It is stored with the checklist but never exported. */
+data class ShardChecklist(
+    val name: String = "My shards",
+    val shards: List<ShardChecklistEntry>,
+    val version: Int = 1,
+    val enabled: Boolean = true,
+)
 data class ShardImportResult(val checklist: ShardChecklist? = null, val unknown: List<String> = emptyList(), val error: String? = null)
 
 object ShardChecklistCodec {
@@ -18,11 +24,13 @@ object ShardChecklistCodec {
     private const val MAX_ENTRIES = 500
     private const val MAX_NAME = 200
     private val gson = GsonBuilder().disableHtmlEscaping().create()
-    private val nameKey = Regex("[^a-z0-9]")
     private val bullet = Regex("^\\s*-\\s*(.*?)\\s+--")
 
-    fun normalizeName(value: String): String = value.lowercase().replace(nameKey, "")
-    fun encode(checklist: ShardChecklist): String = Base64.getEncoder().encodeToString(gson.toJson(checklist).toByteArray(StandardCharsets.UTF_8))
+    fun normalizeName(value: String): String = ShardQuery.normalize(value)
+    fun encode(checklist: ShardChecklist): String {
+        val exported = gson.toJsonTree(checklist).asJsonObject.apply { remove("enabled") }
+        return Base64.getEncoder().encodeToString(gson.toJson(exported).toByteArray(StandardCharsets.UTF_8))
+    }
 
     fun decode(input: String, catalog: Collection<ShardDefinition>): ShardImportResult {
         if (input.length > MAX_RAW) return ShardImportResult(error = "Input is too large")
@@ -103,8 +111,16 @@ object ShardChecklistCodec {
 
     private fun validate(raw: List<ShardChecklistEntry>, title: String, catalog: Collection<ShardDefinition>): ShardImportResult {
         val primary = catalog.flatMap { definition ->
-            (listOf(definition.displayName, definition.internalName, definition.bazaarName) + definition.aliases)
-                .filter { it.isNotBlank() }.map { normalizeName(it) to definition }
+            (listOf(
+                definition.displayName,
+                definition.internalName,
+                definition.bazaarName,
+                definition.shardId,
+                definition.shardLabel,
+            ) + definition.aliases)
+                .filter { it.isNotBlank() }
+                .map { normalizeName(it) to definition }
+                .filter { it.first.isNotEmpty() }
         }.groupBy({ it.first }, { it.second })
         val abilities = catalog.filter { it.abilityName.isNotBlank() }
             .groupBy { normalizeName(it.abilityName) }
@@ -113,6 +129,7 @@ object ShardChecklistCodec {
         raw.forEach { entry ->
             if (entry.name.isBlank() || entry.name.length > MAX_NAME || entry.targetLevel !in 1..10) { unknown += entry.name; return@forEach }
             val lookupKey = normalizeName(entry.name)
+            if (lookupKey.isEmpty()) { unknown += entry.name; return@forEach }
             val matches = (primary[lookupKey] ?: abilities[lookupKey].orEmpty()).distinctBy { it.displayName }
             if (matches.size != 1) { unknown += entry.name; return@forEach }
             val definition = matches.single()
@@ -121,7 +138,6 @@ object ShardChecklistCodec {
             if (existing == null || entry.targetLevel > existing.targetLevel) result[canonicalKey] = entry.copy(name = canonicalKey)
         }
         if (unknown.isNotEmpty()) return ShardImportResult(unknown = unknown, error = "Unknown or invalid shard names")
-        if (result.isEmpty()) return ShardImportResult(error = "No recognized shard names")
         return ShardImportResult(ShardChecklist(title, result.values.toList()), emptyList())
     }
 }

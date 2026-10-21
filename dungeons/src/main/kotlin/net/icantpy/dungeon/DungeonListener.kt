@@ -1,6 +1,7 @@
 package net.icantpy.dungeon
 
 import net.icantpy.dungeon.timer.TickTimers
+import net.icantpy.location.SkyblockLocation
 import net.minecraft.client.Minecraft
 import net.minecraft.world.scores.DisplaySlot
 import net.minecraft.world.scores.PlayerTeam
@@ -40,8 +41,9 @@ object DungeonListener {
         val parsedFloor = ChatClocks.floorFromLines(lines)
         val floor = if (parsedFloor != DungeonFloor.NONE) parsedFloor else state.floor
         val inBossBox = BossRooms.contains(floor, player.x, player.z)
-        val onBoard = ChatClocks.inDungeon(lines)
-        val elsewhere = ChatClocks.elsewhere(lines)
+        val island = SkyblockLocation.snapshot.island
+        val onBoard = ChatClocks.inDungeon(lines, island)
+        val elsewhere = ChatClocks.elsewhere(lines, island)
         if (elsewhere && !onBoard && !inBossBox) {
             missTicks += 1
             if (missTicks >= LEAVE_GRACE_TICKS) reset()

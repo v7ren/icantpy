@@ -64,7 +64,7 @@ class LeapMenuEditorScreen : Screen(Component.literal("Spirit Leap layout")) {
         surface.paint(graphics) { canvas ->
             val draw = MenuDraw(canvas, 0, height, 0, width, mouseX, mouseY, chrome)
             draw.round(0, 0, width, height, 0f, draw.palette.scrim)
-            draw.grid(20, 0xFF18181B.toInt())
+            draw.grid(20, 0xFF20252E.toInt())
             hits = draw.hits
         }
         LeapMenuRenderer.render(

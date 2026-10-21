@@ -20,6 +20,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Client-only player appearance replacement. The proxy is never added to the world. */
 object PlayerDisguise {
+    private const val MORPH_DISABLED_MESSAGE = "Morph is disabled — enable it in /icantpy"
+
     private val ARMOR_SLOTS = listOf(
         EquipmentSlot.HEAD,
         EquipmentSlot.CHEST,
@@ -29,6 +31,9 @@ object PlayerDisguise {
 
     @Volatile
     private var selectedEntityId: String? = null
+
+    @Volatile
+    private var morphEnabled: Boolean = true
 
     @Volatile
     private var followMorphEyeHeight: Boolean = false
@@ -57,6 +62,7 @@ object PlayerDisguise {
         crosshairHookAvailable = false
         val config = PlayerDisguiseStore.load()
         selectedEntityId = config.entityId
+        morphEnabled = config.enabled
         followMorphEyeHeight = config.followEyeHeight
         selectedCameraMode = config.cameraMode
         clearProxy()
@@ -66,6 +72,7 @@ object PlayerDisguise {
         cameraLookHookAvailable = false
         crosshairHookAvailable = false
         selectedEntityId = null
+        morphEnabled = true
         followMorphEyeHeight = false
         selectedCameraMode = MorphCameraMode.LOOK_AT
         clearProxy()
@@ -131,16 +138,35 @@ object PlayerDisguise {
         failedEntityId = null
         clearProxy()
         persist()
+        if (!morphEnabled) return MORPH_DISABLED_MESSAGE
         return "morphed your player into $normalized; other icantpy users see the morph"
     }
 
+    /** Saved morph target, shown on the config page even while the feature is off. */
     fun entityId(): String? = selectedEntityId
 
+    /** Morph applied to the local player and published to others; null while disabled. */
+    fun activeEntityId(): String? = selectedEntityId.takeIf { morphEnabled }
+
+    fun enabled(): Boolean = morphEnabled
+
+    /** Morph master switch; the saved morph is kept and restored when re-enabled. */
+    fun setEnabled(enabled: Boolean): String {
+        morphEnabled = enabled
+        clearProxy()
+        persist()
+        return if (enabled) "Morph enabled" else "Morph disabled"
+    }
+
+    /** Saved eye-height preference, shown on the config page. */
     fun followEyeHeight(): Boolean = followMorphEyeHeight
+
+    /** Eye-height and crosshair adjustments only apply while the morph is active. */
+    internal fun cameraFollowsMorph(): Boolean = morphEnabled && followMorphEyeHeight
 
     fun cameraMode(): MorphCameraMode = selectedCameraMode
 
-    internal fun usesLookDirection(): Boolean = selectedCameraMode.usesLookDirection(followMorphEyeHeight)
+    internal fun usesLookDirection(): Boolean = selectedCameraMode.usesLookDirection(cameraFollowsMorph())
 
     fun setCameraMode(mode: MorphCameraMode): String {
         selectedCameraMode = mode
@@ -196,20 +222,21 @@ object PlayerDisguise {
         val mc = Minecraft.getInstance()
         val player = mc.player ?: return null
         if (entity !== player) return null
-        val entityId = selectedEntityId ?: return null
+        val entityId = activeEntityId() ?: return null
         val firstPerson = mc.options.getCameraType().isFirstPerson()
-        val type = if (followMorphEyeHeight && (!firstPerson || crosshairHookAvailable)) resolveType(entityId) else null
+        val follow = cameraFollowsMorph()
+        val type = if (follow && (!firstPerson || crosshairHookAvailable)) resolveType(entityId) else null
         val morphHeight = type?.let {
             proxy?.takeIf { current -> current.getType() == it }?.getEyeHeight()
                 ?: it.getDimensions().eyeHeight()
         }
         return MorphCameraHeight.resolve(
-            firstPerson, followMorphEyeHeight, player.getEyeHeight(), morphHeight, crosshairHookAvailable,
+            firstPerson, follow, player.getEyeHeight(), morphHeight, crosshairHookAvailable,
         )
     }
 
     private fun persist(notifyAppearance: Boolean = true) {
-        PlayerDisguiseStore.save(PlayerDisguiseConfig(selectedEntityId, followMorphEyeHeight, selectedCameraMode))
+        PlayerDisguiseStore.save(PlayerDisguiseConfig(selectedEntityId, followMorphEyeHeight, selectedCameraMode, morphEnabled))
         if (notifyAppearance) CustomCosmeticsShare.onLocalAppearanceChanged()
     }
 
@@ -218,7 +245,7 @@ object PlayerDisguise {
         val mc = Minecraft.getInstance()
         val player = entity as? Player ?: return null
         return if (player === mc.player) {
-            renderOwned(player, selectedEntityId, mc, local = true)
+            renderOwned(player, activeEntityId(), mc, local = true)
         } else {
             renderOwned(player, CustomCosmeticsShare.morphEntityId(player.uuid), mc, local = false)
         }

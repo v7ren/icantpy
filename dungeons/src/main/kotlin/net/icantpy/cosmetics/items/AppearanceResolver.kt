@@ -15,9 +15,12 @@ object AppearanceResolver {
         localByName: (String) -> CustomRenameItemData? = { null },
         remoteBySkyblockId: (String) -> CustomRenameItemData?,
         remoteByName: (String) -> CustomRenameItemData? = { null },
+        /** Item Customize master switch: when false, the local player's own records are ignored. */
+        localEnabled: Boolean = true,
     ): CustomRenameItemData? = when (kind) {
         AppearanceOwnerKind.LOCAL, AppearanceOwnerKind.UNKNOWN ->
-            uuid?.let(localByUuid)
+            if (!localEnabled) null
+            else uuid?.let(localByUuid)
                 ?: skyblockId?.let(localBySkyblockId)
                 ?: displayName?.let(localByName)
         AppearanceOwnerKind.REMOTE_PLAYER ->

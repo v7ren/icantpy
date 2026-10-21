@@ -17,6 +17,8 @@ data class LeapArmRequest(
     val sourceKind: LeapSourceKind = LeapSourceKind.CUSTOM,
     val sourceTriggerId: String = "",
     val section: Int = 0,
+    /** How long the armed target lasts; set from the card that armed it. */
+    val hold: LeapHoldSpec = LeapHoldSpec(),
 )
 
 data class LeapEligibility(
@@ -38,7 +40,9 @@ object LeapOrientEngine {
             TickClocks.NECRON.matches(normalized) -> LeapTriggerEvent.BOSS_NECRON
             NECRON_ENTRY.matches(normalized) -> LeapTriggerEvent.BOSS_GOLDOR_DEATH
             P5_RELICS.matches(normalized) -> LeapTriggerEvent.BOSS_NECRON_DEATH
-            MAXOR_END.matches(normalized) -> LeapTriggerEvent.BOSS_STORM_START
+            MAXOR_START.matches(normalized) -> LeapTriggerEvent.MAXOR_START
+            MAXOR_END.matches(normalized) -> LeapTriggerEvent.MAXOR_DEATH
+            WITHER_KING_END.matches(normalized) -> LeapTriggerEvent.WITHER_KING_DEATH
             else -> null
         }
     }
@@ -58,6 +62,8 @@ object LeapOrientEngine {
 
     fun bossChatLine(event: LeapTriggerEvent): String? = when (event) {
         LeapTriggerEvent.BOSS_STORM_END -> "[BOSS] Storm: I should have known that I stood no chance."
+        LeapTriggerEvent.MAXOR_START -> "[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!"
+        LeapTriggerEvent.MAXOR_DEATH -> "[BOSS] Maxor: I'M TOO YOUNG TO DIE AGAIN!"
         LeapTriggerEvent.BOSS_STORM_START -> "[BOSS] Storm: Pathetic Maxor, just like expected."
         LeapTriggerEvent.BOSS_GOLDOR -> "[BOSS] Goldor: Who dares trespass into my domain?"
         LeapTriggerEvent.BOSS_CORE -> "The Core entrance is opening!"
@@ -67,7 +73,7 @@ object LeapOrientEngine {
             "[BOSS] Necron: All this, for nothing..."
         LeapTriggerEvent.BOSS_P5 -> "[BOSS] Necron: All this, for nothing..."
         LeapTriggerEvent.RELIC_PICKUP -> null
-        LeapTriggerEvent.LEAPED_TO, LeapTriggerEvent.SELF_LEAP, LeapTriggerEvent.LEAP_CHAIN, LeapTriggerEvent.CLOCK -> null
+        else -> null
     }
 
     fun parseAtPing(message: String, keyword: String): Pair<OrientSpot, LeapDungeonClass?>? {
@@ -79,6 +85,60 @@ object LeapOrientEngine {
         val spot = OrientSpot.fromToken(token)
         if (clazz == null && spot == null) return OrientSpot.ANY to null
         return (spot ?: OrientSpot.ANY) to clazz
+    }
+
+    /** Events whose chat line names a player; the trigger match text filters on that name. */
+    val NAME_FILTERED_EVENTS: Set<LeapTriggerEvent> = setOf(
+        LeapTriggerEvent.WITHER_KEY,
+        LeapTriggerEvent.BLOOD_KEY,
+        LeapTriggerEvent.WITHER_DOOR,
+        LeapTriggerEvent.PUZZLE_FAIL,
+        LeapTriggerEvent.TERMINAL_DONE,
+        LeapTriggerEvent.TEAMMATE_DEATH,
+        LeapTriggerEvent.BOSS_ENRAGED,
+        LeapTriggerEvent.CRYSTAL_PICKUP,
+        LeapTriggerEvent.PLAYER_READY,
+        LeapTriggerEvent.PF_JOINED,
+    )
+
+    /**
+     * Events whose captured text is a place, class or blessing. The trigger match text is compared with it
+     * case-insensitively; blank, "any", "self" and "me" match every value.
+     */
+    val VALUE_FILTERED_EVENTS: Set<LeapTriggerEvent> = setOf(
+        LeapTriggerEvent.ISLAND_ENTERED,
+        LeapTriggerEvent.ISLAND_LEFT,
+        LeapTriggerEvent.CLASS_SELECTED,
+        LeapTriggerEvent.BLESSING,
+    )
+
+    fun valueMatchHits(trigger: LeapOrientTrigger, value: String): Boolean {
+        val want = trigger.match.trim()
+        if (want.isEmpty() || want.lowercase() in setOf("any", "self", "me")) return true
+        return want.equals(value.trim(), ignoreCase = true)
+    }
+
+    /**
+     * Events whose match text filters on a relic color ("Red", "Blue", ...), compared with the same
+     * rules as [NAME_FILTERED_EVENTS]. The captured name is the color.
+     */
+    val COLOR_FILTERED_EVENTS: Set<LeapTriggerEvent> = setOf(
+        LeapTriggerEvent.RELIC_PLACED_SELF,
+        LeapTriggerEvent.RELIC_PLACED_ANY,
+        LeapTriggerEvent.DRAGON_SPAWNING,
+        LeapTriggerEvent.DRAGON_SPAWNED,
+        LeapTriggerEvent.DRAGON_KILLED,
+        LeapTriggerEvent.DRAGON_PRIORITY,
+    )
+
+    /** Blank or "any" matches everyone; "self" or "me" matches the local player; anything else is a player name. */
+    fun namedMatchHits(trigger: LeapOrientTrigger, name: String, selfName: String?): Boolean {
+        val want = trigger.match.trim()
+        if (want.isEmpty() || want.equals("any", ignoreCase = true)) return true
+        if (want.equals("self", ignoreCase = true) || want.equals("me", ignoreCase = true)) {
+            return selfName != null && name.equals(selfName, ignoreCase = true)
+        }
+        return name.equals(want, ignoreCase = true)
     }
 
     fun leapedTemplates(settings: LeapOrientSettings): List<String> =
@@ -172,6 +232,17 @@ object LeapOrientEngine {
         classOf: (String) -> LeapDungeonClass,
         playerForClass: (LeapDungeonClass) -> LeapPlayer?,
         context: LeapRouteContext = LeapRouteContext(),
+    ): LeapArmRequest? = resolveTarget(trigger, sender, senderClass, leaped, classOf, playerForClass, context)
+        ?.copy(hold = trigger.holdSpec())
+
+    private fun resolveTarget(
+        trigger: LeapOrientTrigger,
+        sender: String,
+        senderClass: LeapDungeonClass,
+        leaped: LeapedChatMatch?,
+        classOf: (String) -> LeapDungeonClass,
+        playerForClass: (LeapDungeonClass) -> LeapPlayer?,
+        context: LeapRouteContext,
     ): LeapArmRequest? {
         val leapedClass = leaped?.asClass
             ?: leaped?.asName?.let(classOf)?.takeIf { it.isReal() }
@@ -318,7 +389,7 @@ object LeapOrientEngine {
     }
 
     fun destinationPhase(trigger: LeapOrientTrigger, context: LeapRouteContext): LeapPhase = when (trigger.event) {
-        LeapTriggerEvent.BOSS_STORM_START -> LeapPhase.P2
+        LeapTriggerEvent.BOSS_STORM_START, LeapTriggerEvent.MAXOR_DEATH -> LeapPhase.P2
         LeapTriggerEvent.BOSS_STORM_END -> LeapPhase.P3
         LeapTriggerEvent.BOSS_GOLDOR_DEATH -> LeapPhase.P4
         LeapTriggerEvent.BOSS_NECRON_DEATH -> LeapPhase.P5
@@ -337,7 +408,11 @@ object LeapOrientEngine {
             trigger.resolvedSection().takeIf { it in 1..4 } ?: context.section
         } else 0
 
-    fun nextPreview(settings: LeapOrientSettings, context: LeapRouteContext): String {
+    fun nextPreview(
+        settings: LeapOrientSettings,
+        context: LeapRouteContext,
+        presetLabels: Map<String, String> = emptyMap(),
+    ): String {
         if (!context.selfClass.isReal()) return "class unknown"
         val upcoming = settings.visibleTriggers(context.selfClass).firstOrNull { trigger ->
             trigger.enabled &&
@@ -346,8 +421,7 @@ object LeapOrientEngine {
                 (trigger.phase == LeapPhase.ANY || trigger.phase == LeapPhase.UNKNOWN ||
                     context.phase == LeapPhase.UNKNOWN || trigger.phase == context.phase)
         } ?: return "none"
-        val at = upcoming.zone.takeIf { it.isNotBlank() }?.let { " @ $it" }.orEmpty()
-        return "${upcoming.title()} → ${upcoming.destLabel()}$at"
+        return upcoming.summary(presetLabels)
     }
 
     private fun assignedPlayer(
@@ -405,6 +479,11 @@ object LeapOrientEngine {
         .trim()
     }
 
+    private val MAXOR_START = Regex("""^\[BOSS]\s+Maxor:\s+WELL! WELL! WELL! LOOK WHO['’]S HERE!$""", RegexOption.IGNORE_CASE)
+    private val WITHER_KING_END = Regex(
+        """^\[BOSS]\s+Wither King:\s+Incredible\. You did what I couldn['’]t do myself\.$""",
+        RegexOption.IGNORE_CASE,
+    )
     private val MAXOR_END = Regex("""^\[BOSS]\s+Maxor:\s+I'M TOO YOUNG TO DIE AGAIN!$""", RegexOption.IGNORE_CASE)
     private val GOLDOR_DEATH = Regex(
         """^\[BOSS]\s+Goldor:\s+You have done it, you destroyed the factory\.{1,3}$""",

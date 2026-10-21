@@ -12,7 +12,7 @@ class OdinLeapBridgeTest {
         val lookup = OdinLeapBridge.playersForClassLookup(listOf(self, bers), listOf(bers))
         assertEquals(LeapDungeonClass.HEALER, lookup.first { it.name == self.name }.clazz)
         val trigger = LeapRoutePreset.rows().first { it.id == "heal-predev" }
-        assertTrue(LeapOrientEngine.eligibility(trigger, LeapTriggerEvent.BOSS_STORM_START,
+        assertTrue(LeapOrientEngine.eligibility(trigger, LeapTriggerEvent.MAXOR_DEATH,
             LeapRouteContext(floor = LeapFloor.M7, phase = LeapPhase.P2,
                 selfClass = lookup.first { it.name == self.name }.clazz)).ok)
     }

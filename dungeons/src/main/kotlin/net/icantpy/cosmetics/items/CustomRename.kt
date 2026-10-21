@@ -131,6 +131,7 @@ object CustomRename {
             localByUuid = { id -> config.item(ItemIdentity(uuid = id)) },
             localBySkyblockId = { id -> skyblockIdIndex[id] ?: config.item(ItemIdentity(skyblockId = id)) },
             localByName = { name -> nameIndex[name] ?: config.item(ItemIdentity(displayName = name)) },
+            localEnabled = config.enabled,
             remoteBySkyblockId = { id ->
                 AppearanceOwnerScope.playerUuid(owner)?.let { playerUuid ->
                     CustomCosmeticsShare.appearance(playerUuid.toString(), id, null)
@@ -198,6 +199,16 @@ object CustomRename {
             consider(player.getItemBySlot(slot))
         }
         if (stamped) commit(next)
+    }
+
+    /** Item Customize master switch. Stored in [CustomRenameConfig.enabled]. */
+    fun enabled(): Boolean = config.enabled
+
+    /** Persists the master switch right away; the share snapshot is republished so others stop seeing local items. */
+    fun setEnabled(enabled: Boolean): CustomRenameConfig {
+        val next = config.copy(enabled = enabled)
+        commit(next)
+        return next
     }
 
     fun shareWithOthers(): Boolean = config.shareWithOthers

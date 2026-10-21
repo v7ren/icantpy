@@ -10,9 +10,17 @@ import net.icantpy.gui.config.HudOverlaySettings
 import net.icantpy.dungeon.leap.LeapMenu
 import net.icantpy.dungeon.leap.LeapMenuScreen
 import net.icantpy.dungeon.leap.LeapOrient
+import net.icantpy.dungeon.dragons.DragonController
+import net.icantpy.dungeon.dragons.DragonHud
+import net.icantpy.dungeon.score.ScoreHud
+import net.icantpy.dungeon.score.ScoreTracker
+import net.icantpy.dungeon.splits.RunSplitsController
+import net.icantpy.dungeon.splits.RunSplitsHud
+import net.icantpy.gui.config.RunHudEditorScreen
 import net.icantpy.dungeon.timer.HudPiece
 import net.icantpy.dungeon.timer.TickTimers
 import net.icantpy.dungeon.timer.TimerHud
+import net.icantpy.dungeon.timer.TimerSettings
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphicsExtractor
@@ -26,6 +34,7 @@ import kotlin.math.roundToInt
 object IcantpyHud {
     private const val BASE_SIZE: Float = 12f
     private const val PAD: Int = 4
+    private const val SIZED_FONT_CACHE_LIMIT: Int = 24
 
     private val mc: Minecraft get() = Minecraft.getInstance()
     private val skia = SkiaSurface()
@@ -34,22 +43,42 @@ object IcantpyHud {
     fun render(graphics: GuiGraphicsExtractor) {
         val screen = McUi.currentScreen(mc)
         if (IcantpyGui.isOurScreen(screen) ||
+            screen is RunHudEditorScreen ||
             LeapMenuScreen.isOpen() ||
             (screen != null && LeapMenu.overlayReady(screen))
         ) {
+            // Our screens draw over the HUD; the cached HUD texture must be redrawn once they close.
+            skia.invalidateContent()
             return
         }
+        renderRunFeatures(graphics)
         paint(graphics, preview = false)
     }
 
+    /** Splits and score boxes use their own position and scale settings, so they are drawn outside the timer pieces. */
+    private fun renderRunFeatures(graphics: GuiGraphicsExtractor) {
+        val splits = RunSplitsController.settings
+        if (splits.enabled) RunSplitsHud.render(graphics, splits.hudX, splits.hudY, splits.hudScale)
+        val score = ScoreTracker.settings
+        if (score.enabled) ScoreHud.render(graphics, score.hudX, score.hudY, score.scale, preview = false)
+        if (DragonController.hudVisible()) {
+            val dragon = DragonController.settings()
+            DragonHud.render(graphics, dragon.hudX, dragon.hudY, dragon.scale, preview = false)
+        }
+        DragonHud.renderTitle(graphics, mc.window.guiScaledWidth, mc.window.guiScaledHeight)
+    }
+
     fun paint(graphics: GuiGraphicsExtractor, preview: Boolean) {
+        closeRetiredFonts()
         val pieces = visiblePieces(preview)
         renderLeapOrientHud(graphics, preview)
         val minecraftPieces = pieces.filter { fontId(it.id).guiFont() == null }
         val skiaPieces = pieces.filter { fontId(it.id).guiFont() != null }
         if (skiaPieces.isNotEmpty()) {
             SkiaContext.initialize()
-            skia.paint(graphics) { canvas ->
+            // Everything drawn on the Skia surface is a function of these inputs; equal inputs reuse the texture.
+            val content = SkiaHudContent(TickTimers.settings, preview, skiaPieces)
+            skia.paintCached(graphics, content) { canvas ->
                 drawSkiaPieces(canvas, skiaPieces)
             }
         }
@@ -233,10 +262,37 @@ object IcantpyHud {
         return width.toInt()
     }
 
-    private fun sized(typeface: Typeface, size: Float) = org.jetbrains.skia.Font(typeface, size).apply {
-        edging = FontEdging.SUBPIXEL_ANTI_ALIAS
-        hinting = FontHinting.SLIGHT
-        isSubpixel = true
+    /**
+     * Skia fonts are native-backed, so they are reused across frames. A font evicted from this LRU may still be in use
+     * during the current frame, so it is queued and closed at the start of the next [paint].
+     */
+    private val retiredFonts = ArrayList<org.jetbrains.skia.Font>()
+    private val sizedFonts = object : LinkedHashMap<Pair<Typeface, Float>, org.jetbrains.skia.Font>(32, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<Pair<Typeface, Float>, org.jetbrains.skia.Font>?,
+        ): Boolean {
+            if (size <= SIZED_FONT_CACHE_LIMIT) return false
+            eldest?.value?.let { retiredFonts += it }
+            return true
+        }
+    }
+
+    private fun closeRetiredFonts() {
+        if (retiredFonts.isEmpty()) return
+        retiredFonts.forEach { it.close() }
+        retiredFonts.clear()
+    }
+
+    private fun sized(typeface: Typeface, size: Float): org.jetbrains.skia.Font {
+        val key = typeface to size
+        sizedFonts[key]?.let { return it }
+        val font = org.jetbrains.skia.Font(typeface, size).apply {
+            edging = FontEdging.SUBPIXEL_ANTI_ALIAS
+            hinting = FontHinting.SLIGHT
+            isSubpixel = true
+        }
+        sizedFonts[key] = font
+        return font
     }
 
     private fun colorRuns(text: String, base: Int, lock: Boolean, forceBold: Boolean): List<ColorRun> {
@@ -274,6 +330,9 @@ object IcantpyHud {
 
     private data class ColorRun(val text: String, val color: Int, val bold: Boolean)
 }
+
+/** Inputs to the Skia HUD texture. Settings are immutable and replaced on edit, so equality short-circuits by identity. */
+private data class SkiaHudContent(val settings: TimerSettings, val preview: Boolean, val pieces: List<HudPiece>)
 
 data class HudMetrics(
     val lines: List<String>,

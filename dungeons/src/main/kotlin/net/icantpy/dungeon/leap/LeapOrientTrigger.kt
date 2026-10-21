@@ -3,6 +3,8 @@ package net.icantpy.dungeon.leap
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import net.icantpy.dungeon.timer.TimerClock
+import net.icantpy.hud.markers.MarkerLook
+import net.icantpy.hud.markers.MarkerShapes
 import java.util.UUID
 
 enum class LeapPreferKind {
@@ -21,58 +23,205 @@ enum class LeapPreferKind {
     }
 }
 
-enum class LeapTriggerEvent {
-    BOSS_STORM_END,
-    BOSS_STORM_START,
-    BOSS_GOLDOR,
-    BOSS_CORE,
-    BOSS_GOLDOR_DEATH,
-    BOSS_NECRON,
-    BOSS_NECRON_DEATH,
-    BOSS_P5,
-    RELIC_PICKUP,
-    LEAPED_TO,
-    SELF_LEAP,
-    LEAP_CHAIN,
-    CLOCK,
+enum class LeapTriggerEvent(val group: String) {
+    // Chat
+    CHAT_MESSAGE("Chat"),
+    // Run
+    RUN_START("Run"),
+    RUN_END("Run"),
+    BOSS_ENTRY("Run"),
+    BLOOD_OPEN("Run"),
+    BLOOD_CAMP_DONE("Run"),
+    BLOOD_CLEAR("Run"),
+    // Clear
+    WITHER_KEY("Clear"),
+    BLOOD_KEY("Clear"),
+    WITHER_DOOR("Clear"),
+    PRINCE_KILLED("Clear"),
+    PUZZLE_FAIL("Clear"),
+    BAT_KILLED("Clear"),
+    // F7/M7 boss
+    MAXOR_START("F7/M7 boss"),
+    MAXOR_DEATH("F7/M7 boss"),
+    BOSS_STORM_START("F7/M7 boss"),
+    BOSS_STORM_END("F7/M7 boss"),
+    BOSS_GOLDOR("F7/M7 boss"),
+    BOSS_CORE("F7/M7 boss"),
+    BOSS_GOLDOR_DEATH("F7/M7 boss"),
+    BOSS_NECRON("F7/M7 boss"),
+    BOSS_NECRON_DEATH("F7/M7 boss"),
+    P5_START("F7/M7 boss"),
+    BOSS_P5("F7/M7 boss"),
+    RELIC_PICKUP("F7/M7 boss"),
+    RELIC_PLACED_SELF("F7/M7 boss"),
+    RELIC_PLACED_ANY("F7/M7 boss"),
+    WITHER_KING_DEATH("F7/M7 boss"),
+    BONZO_DEAD("F7/M7 boss"),
+    MAXOR_STUNNED("F7/M7 boss"),
+    BOSS_ENRAGED("F7/M7 boss"),
+    CRYSTAL_PICKUP("F7/M7 boss"),
+    STORM_CRUSHED("F7/M7 boss"),
+    STORM_PAD_PHASE("F7/M7 boss"),
+    WK_DRAGON_KILLED("F7/M7 boss"),
+    DRAGON_SPAWNING("F7/M7 boss"),
+    DRAGON_SPAWNED("F7/M7 boss"),
+    DRAGON_KILLED("F7/M7 boss"),
+    DRAGON_PRIORITY("F7/M7 boss"),
+    // F7/M7 terminals
+    TERMINAL_DONE("F7/M7 terminals"),
+    SECTION_DONE("F7/M7 terminals"),
+    GATE_DESTROYED("F7/M7 terminals"),
+    // Other floors
+    LIVID_START("Other floors"),
+    SADAN_GIANTS("Other floors"),
+    SADAN_DONE("Other floors"),
+    PROFESSOR_GUARDIAN("Other floors"),
+    // Player
+    SELF_DEATH("Player"),
+    TEAMMATE_DEATH("Player"),
+    MASK_PROC("Player"),
+    ABILITY_COOLDOWN("Player"),
+    HEALTH_LOW("Player"),
+    // Leap and timer
+    LEAPED_TO("Leap"),
+    SELF_LEAP("Leap"),
+    LEAP_CHAIN("Leap"),
+    CLOCK("Timer"),
+    // Location (tab list, sidebar)
+    ISLAND_ENTERED("Location"),
+    ISLAND_LEFT("Location"),
+    DUNGEON_ENTERED("Location"),
+    DUNGEON_LEFT("Location"),
+    // Lobby (chat)
+    PLAYER_READY("Lobby"),
+    COUNTDOWN("Lobby"),
+    CLASS_SELECTED("Lobby"),
+    PF_JOINED("Lobby"),
+    // Progress (tab list and sidebar)
+    SECRETS_REACHED("Progress"),
+    CRYPTS_REACHED("Progress"),
+    CLEARED_REACHED("Progress"),
+    DEATHS_CHANGED("Progress"),
+    // Puzzles (chat)
+    PUZZLE_SOLVED("Puzzles"),
+    MIMIC_DEAD("Puzzles"),
+    BLESSING("Puzzles"),
+    // Kuudra (chat)
+    KUUDRA_SUPPLIES("Kuudra"),
+    KUUDRA_BUILD_DONE("Kuudra"),
+    KUUDRA_STUN("Kuudra"),
+    KUUDRA_LAIR("Kuudra"),
+    // Slayer
+    SLAYER_STARTED("Slayer"),
+    SLAYER_BOSS_SPAWNED("Slayer"),
+    SLAYER_COMPLETE("Slayer"),
+    SLAYER_FAILED("Slayer"),
     ;
 
+    /** Progress events that compare a count against the trigger's [LeapOrientTrigger.threshold]. */
+    fun usesThreshold(): Boolean = this == SECRETS_REACHED || this == CRYPTS_REACHED || this == CLEARED_REACHED
+
     fun label(): String = when (this) {
+        ISLAND_ENTERED -> "Island entered"
+        ISLAND_LEFT -> "Island left"
+        DUNGEON_ENTERED -> "Dungeon entered"
+        DUNGEON_LEFT -> "Dungeon left"
+        PLAYER_READY -> "Player ready"
+        COUNTDOWN -> "Run countdown (1s)"
+        CLASS_SELECTED -> "Class selected"
+        PF_JOINED -> "Party finder join"
+        SECRETS_REACHED -> "Secrets found at least N"
+        CRYPTS_REACHED -> "Crypts at least N"
+        CLEARED_REACHED -> "Cleared at least N%"
+        DEATHS_CHANGED -> "Team death count increased"
+        PUZZLE_SOLVED -> "Puzzle solved"
+        MIMIC_DEAD -> "Mimic killed (party chat)"
+        BLESSING -> "Blessing picked"
+        KUUDRA_SUPPLIES -> "Kuudra supplies phase"
+        KUUDRA_BUILD_DONE -> "Kuudra ballista ready"
+        KUUDRA_STUN -> "Kuudra stunned"
+        KUUDRA_LAIR -> "Kuudra lair (final)"
+        SLAYER_STARTED -> "Slayer quest started"
+        SLAYER_BOSS_SPAWNED -> "Slayer boss spawned"
+        SLAYER_COMPLETE -> "Slayer quest complete"
+        SLAYER_FAILED -> "Slayer quest failed"
+        MAXOR_START -> "Maxor starts (P1)"
+        MAXOR_DEATH -> "Maxor dies"
+        BOSS_STORM_START -> "Storm starts (P2)"
         BOSS_STORM_END -> "Storm dies"
-        BOSS_STORM_START -> "Maxor dies"
-        BOSS_GOLDOR -> "Goldor start"
+        BOSS_GOLDOR -> "Goldor starts (P3)"
         BOSS_CORE -> "Core opens"
         BOSS_GOLDOR_DEATH -> "Goldor dies"
-        BOSS_NECRON -> "Necron drop"
+        BOSS_NECRON -> "Necron starts (P4)"
         BOSS_NECRON_DEATH -> "Necron dies"
         BOSS_P5 -> "P5 relics"
         RELIC_PICKUP -> "Relic picked up"
+        RELIC_PLACED_SELF -> "Your relic placed"
+        RELIC_PLACED_ANY -> "Any relic placed"
+        MAXOR_STUNNED -> "Maxor stunned (crystal beam)"
+        BOSS_ENRAGED -> "Boss enraged"
+        CRYSTAL_PICKUP -> "Energy crystal picked"
+        STORM_CRUSHED -> "Storm crushed"
+        STORM_PAD_PHASE -> "Storm lightning/pad phase"
+        WK_DRAGON_KILLED -> "Wither King dragon killed"
+        DRAGON_SPAWNING -> "Dragon spawning"
+        DRAGON_SPAWNED -> "Dragon spawned"
+        DRAGON_KILLED -> "Dragon killed"
+        DRAGON_PRIORITY -> "Priority dragon chosen"
+        BAT_KILLED -> "Bonus bat killed"
+        LIVID_START -> "Livid starts"
+        SADAN_GIANTS -> "Sadan giants"
+        SADAN_DONE -> "Sadan defeated"
+        PROFESSOR_GUARDIAN -> "Professor ultimate"
+        ABILITY_COOLDOWN -> "Ability on cooldown"
+        WITHER_KING_DEATH -> "Wither King dies"
         LEAPED_TO -> "Leaped to"
         SELF_LEAP -> "I leaped"
         LEAP_CHAIN -> "After my leap"
         CLOCK -> "Clock hit"
+        RUN_START -> "Run starts"
+        RUN_END -> "Run ends"
+        BOSS_ENTRY -> "Boss room entered"
+        BLOOD_OPEN -> "Blood door opened"
+        BLOOD_CAMP_DONE -> "Watcher done"
+        BLOOD_CLEAR -> "Blood cleared"
+        WITHER_KEY -> "Wither key picked"
+        BLOOD_KEY -> "Blood key picked"
+        WITHER_DOOR -> "Wither door opened"
+        PRINCE_KILLED -> "Prince killed"
+        PUZZLE_FAIL -> "Puzzle failed"
+        TERMINAL_DONE -> "Terminal/device/lever done"
+        SECTION_DONE -> "P3 section done"
+        GATE_DESTROYED -> "Gate destroyed"
+        P5_START -> "Wither King starts (P5)"
+        BONZO_DEAD -> "Bonzo dies"
+        SELF_DEATH -> "You died"
+        TEAMMATE_DEATH -> "Teammate died"
+        MASK_PROC -> "Mask/Phoenix proc"
+        HEALTH_LOW -> "Health below %"
+        CHAT_MESSAGE -> "Chat message"
     }
 
     fun nativeState(): String? = when (this) {
-        BOSS_STORM_END, BOSS_STORM_START -> "p2"
+        BOSS_STORM_END, BOSS_STORM_START, MAXOR_DEATH -> "p2"
         BOSS_GOLDOR -> "p3"
         BOSS_CORE -> "p3s4"
         BOSS_GOLDOR_DEATH -> "p4"
         BOSS_NECRON -> "p4"
         BOSS_NECRON_DEATH -> "p5"
         BOSS_P5 -> "p5"
-        RELIC_PICKUP -> "p5"
-        LEAPED_TO, SELF_LEAP, LEAP_CHAIN, CLOCK -> null
+        RELIC_PICKUP, RELIC_PLACED_SELF, RELIC_PLACED_ANY -> "p5"
+        else -> null
     }
 
     fun nativePhase(): LeapPhase? = when (this) {
-        BOSS_STORM_END, BOSS_STORM_START -> LeapPhase.P2
+        BOSS_STORM_END, BOSS_STORM_START, MAXOR_DEATH -> LeapPhase.P2
         BOSS_GOLDOR, BOSS_CORE -> LeapPhase.P3
         BOSS_GOLDOR_DEATH, BOSS_NECRON -> LeapPhase.P4
         BOSS_NECRON_DEATH -> LeapPhase.P4
         BOSS_P5 -> LeapPhase.P5
-        RELIC_PICKUP -> LeapPhase.P5
-        LEAPED_TO, SELF_LEAP, LEAP_CHAIN, CLOCK -> null
+        RELIC_PICKUP, RELIC_PLACED_SELF, RELIC_PLACED_ANY -> LeapPhase.P5
+        else -> null
     }
 
     fun next(): LeapTriggerEvent {
@@ -138,8 +287,53 @@ data class LeapOrientTrigger(
     val reason: String = "",
     val presetId: String? = null,
     val group: String = "",
+    /**
+     * Ordered card rows, first element runs first. At most [LeapAutoStep.MAX_STEPS]. A [LeapAutoKind.LEAP_TARGET]
+     * row arms the leap fields above; the other rows are queued auto actions.
+     */
+    val steps: List<LeapAutoStep> = emptyList(),
+    /** HEALTH_LOW threshold in percent of max health, 10..90. */
+    val healthBelowPercent: Int = 50,
+    /** Count for the progress events in [LeapTriggerEvent.usesThreshold]; 0 means the card never fires. */
+    val threshold: Int = 0,
+    /** CHAT_MESSAGE: who must have sent the line. [ChatSender.PLAYER] uses [chatPlayer]. */
+    val chatSender: ChatSender = ChatSender.SELF,
+    val chatPlayer: String = "",
+    val chatChannel: ChatChannel = ChatChannel.ANY,
+    val chatMode: ChatTextMode = ChatTextMode.CONTAINS,
+    val chatText: String = "",
+    /** Minimum gap between two firings of this card from chat, in milliseconds. */
+    val chatCooldownMs: Int = 1000,
+    /** How the armed leap target lasts. Defaults keep older cards timed at the global duration. */
+    val holdMode: LeapHoldMode = LeapHoldMode.TIMED,
+    /** Seconds for [LeapHoldMode.TIMED]; 0 uses the global default duration. */
+    val holdSeconds: Int = 0,
+    /** A locked target cannot be replaced by a lower or equal priority trigger while it is active. */
+    val holdLocked: Boolean = false,
 ) {
     val isPreset: Boolean get() = !presetId.isNullOrBlank()
+
+    /**
+     * Hold settings for the leap this card arms. Chain cards saved before [holdSeconds] existed keep
+     * their chainDurationSeconds as the hold length.
+     */
+    fun holdSpec(): LeapHoldSpec {
+        val legacy = if (event == LeapTriggerEvent.LEAP_CHAIN) chainDurationSeconds else 0
+        return LeapHoldSpec(
+            mode = holdMode,
+            seconds = if (holdSeconds > 0) holdSeconds else legacy,
+            locked = holdLocked,
+        )
+    }
+
+    /** Derived from [steps]: a card arms its leap exactly when it holds a leap target row. */
+    val armLeap: Boolean get() = LeapAutoStepList.hasLeapTarget(steps)
+
+    /**
+     * The rows that queue game actions, in run order. Leap target and follow-ups are excluded because
+     * they are applied instantly.
+     */
+    fun queueableSteps(): List<LeapAutoStep> = steps.filter { !LeapAutoStepList.isInstant(it) }
 
     fun sourceKind(): LeapSourceKind = LeapSourceKind.fromEvent(event, isPreset)
 
@@ -159,6 +353,22 @@ data class LeapOrientTrigger(
         return Regex("""p3s([1-4])""").find(whenState.lowercase())?.groupValues?.get(1)?.toIntOrNull() ?: 0
     }
 
+    /** Text for each row in order, such as "Sort: P1", "Loadout 3", or the leap destination for a leap row. */
+    fun stepLabels(presetLabels: Map<String, String> = emptyMap()): List<String> =
+        steps.map { step ->
+            if (step.kind == LeapAutoKind.LEAP_TARGET) leapText() ?: step.label(presetLabels) else step.label(presetLabels)
+        }
+
+    /** Leap destination text, or null when this trigger does not arm a leap. */
+    fun leapText(): String? {
+        if (!armLeap) return null
+        val at = zone.takeIf { it.isNotBlank() }?.let { " at $it" }.orEmpty()
+        val why = reason.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+        val requires = requiresTargetClass.takeIf { it.isReal() }?.let { " · after ${it.displayName}" }.orEmpty()
+        return "Leap to ${destLabel()}$at$why$requires${LeapHoldText.cardSuffix(LeapHoldSpec(holdMode, holdSeconds, holdLocked))}"
+    }
+
+    /** Destination of the leap target, such as a class name or "sender". */
     fun destLabel(): String = when (target) {
         LeapCenterTarget.CLASS -> LeapDungeonClass.fromToken(targetValue)?.displayName ?: targetValue
         LeapCenterTarget.NAME -> targetValue.ifBlank { targetPlayer.ifBlank { "name" } }
@@ -169,6 +379,7 @@ data class LeapOrientTrigger(
 
     fun title(): String = when {
         event == LeapTriggerEvent.CLOCK && clock != null -> clock.summary()
+        event == LeapTriggerEvent.CHAT_MESSAGE -> chatTitle()
         event == LeapTriggerEvent.LEAP_CHAIN -> {
             val after = when {
                 match.equals("any", true) -> "anyone"
@@ -180,15 +391,45 @@ data class LeapOrientTrigger(
         else -> event.label()
     }
 
-    fun subtitle(): String {
-        val dest = destLabel()
-        val at = zone.takeIf { it.isNotBlank() }?.let { " at $it" }.orEmpty()
-        val why = reason.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
-        val requires = requiresTargetClass.takeIf { it.isReal() }?.let { " · after ${it.displayName}" }.orEmpty()
-        return "Leap to $dest$at$why$requires"
+    /** Such as `Chat (Me, Party) contains "abc"`. */
+    fun chatTitle(): String {
+        val who = when (chatSender) {
+            ChatSender.PLAYER -> chatPlayer.ifBlank { "Player" }
+            else -> chatSender.label
+        }
+        val how = when (chatMode) {
+            ChatTextMode.CONTAINS -> "contains"
+            ChatTextMode.EXACT -> "is exactly"
+            ChatTextMode.STARTS_WITH -> "starts with"
+            ChatTextMode.REGEX -> "matches regex"
+        }
+        val text = chatText.ifBlank { "..." }
+        return "Chat ($who, ${chatChannel.label}) $how \"$text\""
     }
 
-    fun summary(): String = "${title()} → ${destLabel()}"
+    /**
+     * Every row's text in run order, joined with " · ". A card with follow-ups shows its leap as a chain,
+     * such as "Leap: Healer → then Tank", in place of the leap row.
+     */
+    fun subtitle(presetLabels: Map<String, String> = emptyMap()): String {
+        val followUps = LeapFollowUp.steps(this)
+        if (followUps.isEmpty()) return stepLabels(presetLabels).joinToString(" · ").ifEmpty { "no action" }
+        val chain = "Leap: ${destLabel()}" + followUps.joinToString("") { " → then ${LeapFollowUp.destLabel(it)}" }
+        val queued = steps.filter { it.kind != LeapAutoKind.LEAP_TARGET && it.kind != LeapAutoKind.FOLLOWUP_LEAP }
+            .map { it.label(presetLabels) }
+        return (listOf(chain) + queued).joinToString(" · ")
+    }
+
+    fun summary(presetLabels: Map<String, String> = emptyMap()): String = "${title()} → ${subtitle(presetLabels)}"
+
+    fun withStepMoved(from: Int, to: Int): LeapOrientTrigger = copy(steps = LeapAutoStepList.moved(steps, from, to))
+
+    fun withStepAdded(step: LeapAutoStep): LeapOrientTrigger = copy(steps = LeapAutoStepList.added(steps, step))
+
+    fun withStepRemoved(index: Int): LeapOrientTrigger = copy(steps = LeapAutoStepList.removed(steps, index))
+
+    fun withStepChanged(index: Int, transform: (LeapAutoStep) -> LeapAutoStep): LeapOrientTrigger =
+        copy(steps = LeapAutoStepList.replaced(steps, index, transform))
 
     fun guiGroup(): String = group.ifBlank {
         when (resolvedPhase()) {
@@ -204,12 +445,15 @@ data class LeapOrientTrigger(
     }
 
     companion object {
+        const val MAX_THRESHOLD: Int = 100
+
         fun create(
             event: LeapTriggerEvent = LeapTriggerEvent.BOSS_STORM_END,
             targetValue: String = "healer",
         ): LeapOrientTrigger = LeapOrientTrigger(
             id = UUID.randomUUID().toString(),
             event = event,
+            threshold = LeapTriggerEventMenu.defaultThreshold(event),
             whenState = event.nativeState() ?: "any",
             match = when (event) {
                 LeapTriggerEvent.LEAPED_TO -> "self"
@@ -340,8 +584,21 @@ object LeapTriggerJson {
             item.addProperty("zone", trigger.zone)
             item.addProperty("reason", trigger.reason)
             item.addProperty("group", trigger.group)
+            // Leap target is a row in "steps"; no separate armLeap flag is written.
+            item.add("steps", stepsToJson(trigger.steps))
             item.addProperty("chainDelaySeconds", trigger.chainDelaySeconds)
             item.addProperty("chainDurationSeconds", trigger.chainDurationSeconds)
+            item.addProperty("healthBelowPercent", trigger.healthBelowPercent)
+            item.addProperty("threshold", trigger.threshold)
+            item.addProperty("chatSender", trigger.chatSender.name)
+            item.addProperty("chatPlayer", trigger.chatPlayer)
+            item.addProperty("chatChannel", trigger.chatChannel.name)
+            item.addProperty("chatMode", trigger.chatMode.name)
+            item.addProperty("chatText", trigger.chatText)
+            item.addProperty("chatCooldownMs", trigger.chatCooldownMs)
+            item.addProperty("holdMode", trigger.holdMode.name)
+            item.addProperty("holdSeconds", trigger.holdSeconds)
+            item.addProperty("holdLocked", trigger.holdLocked)
             trigger.presetId?.let { item.addProperty("presetId", it) }
             trigger.clock?.let { spec ->
                 val clock = JsonObject()
@@ -395,9 +652,148 @@ object LeapTriggerJson {
                 reason = string(item, "reason", ""),
                 presetId = string(item, "presetId", "").ifBlank { null },
                 group = string(item, "group", ""),
+                steps = stepsFromJson(item),
+                healthBelowPercent = int(item, "healthBelowPercent", 50).coerceIn(10, 90),
+                threshold = int(item, "threshold", 0).coerceIn(0, LeapOrientTrigger.MAX_THRESHOLD),
+                chatSender = enumValue(item, "chatSender", ChatSender.SELF),
+                chatPlayer = string(item, "chatPlayer", ""),
+                chatChannel = enumValue(item, "chatChannel", ChatChannel.ANY),
+                chatMode = enumValue(item, "chatMode", ChatTextMode.CONTAINS),
+                chatText = string(item, "chatText", ""),
+                chatCooldownMs = int(item, "chatCooldownMs", 1000).coerceAtLeast(0),
+                holdMode = LeapHoldMode.fromToken(string(item, "holdMode", "")) ?: LeapHoldMode.TIMED,
+                holdSeconds = int(item, "holdSeconds", 0).coerceIn(0, 60),
+                holdLocked = bool(item, "holdLocked", false),
             )
         }
         return parsed
+    }
+
+    /**
+     * Current saves have a "steps" array and no "armLeap" key; the leap target is a row in it.
+     * Older saves wrote "armLeap" next to "steps" (or a single legacy "action" with no "steps"). Those
+     * convert to rows: a true armLeap becomes a leap-target row at index 0, followed by the old rows.
+     */
+    private fun stepsFromJson(item: JsonObject): List<LeapAutoStep> {
+        val hasStepArray = item.has("steps") && item.get("steps").isJsonArray
+        if (hasStepArray && !item.has("armLeap")) {
+            return LeapAutoStepList.withSingleLeapTarget(readStepArray(item)).take(LeapAutoStep.MAX_STEPS)
+        }
+        val oldRows = if (hasStepArray) readStepArray(item) else listOfNotNull(legacySingleStep(item))
+        val rows = if (armLeapFromLegacy(item)) listOf(LeapAutoStep.leapTarget()) + oldRows else oldRows
+        return LeapAutoStepList.withSingleLeapTarget(rows).take(LeapAutoStep.MAX_STEPS)
+    }
+
+    /** Old "armLeap" flag. Without it, a trigger arms a leap unless its legacy action is a real auto action. */
+    private fun armLeapFromLegacy(item: JsonObject): Boolean {
+        if (item.has("armLeap")) return bool(item, "armLeap", true)
+        return legacyAutoKind(item) == null
+    }
+
+    private fun readStepArray(item: JsonObject): List<LeapAutoStep> =
+        item.getAsJsonArray("steps").mapNotNull { element ->
+            if (element.isJsonObject) stepFromJson(element.asJsonObject) else null
+        }
+
+    /** The one action an old save stored in "action", converted to a row. */
+    private fun legacySingleStep(item: JsonObject): LeapAutoStep? = when (legacyAutoKind(item)) {
+        LeapAutoKind.SORT_INVENTORY -> LeapAutoStep(LeapAutoKind.SORT_INVENTORY, sortPreset = string(item, "sortPreset", ""))
+        LeapAutoKind.EQUIP_STATS -> LeapAutoStep(LeapAutoKind.EQUIP_STATS, statsPreset = string(item, "statsPreset", ""))
+        LeapAutoKind.SWITCH_LOADOUT -> LeapAutoStep(LeapAutoKind.SWITCH_LOADOUT, loadout = int(item, "loadout", 0).coerceAtLeast(0))
+        LeapAutoKind.LEAP_TARGET, LeapAutoKind.FOLLOWUP_LEAP, LeapAutoKind.MARK_PLAYER, null -> null
+    }
+
+    /** The auto kind named by a legacy "action" value, or null for leap targets and unknown names. */
+    private fun legacyAutoKind(item: JsonObject): LeapAutoKind? {
+        val name = string(item, "action", "")
+        return when (name.uppercase()) {
+            "SORT_INVENTORY" -> LeapAutoKind.SORT_INVENTORY
+            "EQUIP_STATS" -> LeapAutoKind.EQUIP_STATS
+            "SWITCH_LOADOUT" -> LeapAutoKind.SWITCH_LOADOUT
+            else -> null
+        }
+    }
+
+    private fun stepFromJson(item: JsonObject): LeapAutoStep? {
+        val kind = LeapAutoKind.entries.firstOrNull { it.name.equals(string(item, "kind", ""), ignoreCase = true) }
+            ?: return null
+        return LeapAutoStep(
+            kind = kind,
+            sortPreset = string(item, "sortPreset", ""),
+            statsPreset = string(item, "statsPreset", ""),
+            loadout = int(item, "loadout", 0).coerceAtLeast(0),
+            sortArmed = bool(item, "sortArmed", false),
+            sortLockUntilDone = bool(item, "sortLockUntilDone", true),
+            sortReopenBlockMs = int(item, "sortReopenBlockMs", 1000).coerceAtLeast(0),
+            sortArmTimeoutMs = int(item, "sortArmTimeoutMs", 30_000).coerceAtLeast(0),
+            followTarget = enumValue(item, "followTarget", LeapCenterTarget.CLASS),
+            followTargetValue = string(item, "followTargetValue", "healer"),
+            followTargetPlayer = string(item, "followTargetPlayer", ""),
+            followHoldMode = LeapHoldMode.fromToken(string(item, "followHoldMode", "")) ?: LeapHoldMode.TIMED,
+            followHoldSeconds = int(item, "followHoldSeconds", 0).coerceIn(0, 60),
+            followHoldLocked = bool(item, "followHoldLocked", false),
+            followWithinSeconds = int(item, "followWithinSeconds", 20).coerceAtLeast(0),
+            markBy = string(item, "markBy", LeapMarkRouter.BY_CLASS),
+            markClass = string(item, "markClass", "HEALER"),
+            markPlayer = string(item, "markPlayer", ""),
+            markStyle = string(item, "markStyle", "ARROW"),
+            markColor = int(item, "markColor", 0xFFFF5555.toInt()),
+            markSeconds = int(item, "markSeconds", 10).coerceAtLeast(0),
+            markShowName = bool(item, "markShowName", true),
+            markOpacity = int(item, "markOpacity", MarkerLook.DEFAULT_OPACITY).coerceIn(0, 100),
+            markBrightness = int(item, "markBrightness", MarkerLook.DEFAULT_BRIGHTNESS).let { if (it in MarkerLook.BRIGHTNESS_CHOICES) it else MarkerLook.DEFAULT_BRIGHTNESS },
+            markSize = int(item, "markSize", MarkerLook.DEFAULT_SIZE).coerceIn(10, 1000),
+            markHeight = int(item, "markHeight", MarkerLook.DEFAULT_HEIGHT).coerceIn(0, 10),
+            markPulse = bool(item, "markPulse", true),
+            markPlayerGlow = bool(item, "markPlayerGlow", false),
+            markMarkerGlow = bool(item, "markMarkerGlow", false),
+            markArrowShape = string(item, "markArrowShape", MarkerShapes.CLASSIC).let { if (it in MarkerShapes.SHAPES) it else MarkerShapes.CLASSIC },
+            markSpin = bool(item, "markSpin", false),
+            markBob = bool(item, "markBob", true),
+            markThroughWalls = bool(item, "markThroughWalls", false),
+        )
+    }
+
+    fun stepsToJson(steps: List<LeapAutoStep>): JsonArray {
+        val array = JsonArray()
+        steps.forEach { step ->
+            val item = JsonObject()
+            item.addProperty("kind", step.kind.name)
+            item.addProperty("sortPreset", step.sortPreset)
+            item.addProperty("statsPreset", step.statsPreset)
+            item.addProperty("loadout", step.loadout)
+            item.addProperty("sortArmed", step.sortArmed)
+            item.addProperty("sortLockUntilDone", step.sortLockUntilDone)
+            item.addProperty("sortReopenBlockMs", step.sortReopenBlockMs)
+            item.addProperty("sortArmTimeoutMs", step.sortArmTimeoutMs)
+            item.addProperty("followTarget", step.followTarget.name)
+            item.addProperty("followTargetValue", step.followTargetValue)
+            item.addProperty("followTargetPlayer", step.followTargetPlayer)
+            item.addProperty("followHoldMode", step.followHoldMode.name)
+            item.addProperty("followHoldSeconds", step.followHoldSeconds)
+            item.addProperty("followHoldLocked", step.followHoldLocked)
+            item.addProperty("followWithinSeconds", step.followWithinSeconds)
+            item.addProperty("markBy", step.markBy)
+            item.addProperty("markClass", step.markClass)
+            item.addProperty("markPlayer", step.markPlayer)
+            item.addProperty("markStyle", step.markStyle)
+            item.addProperty("markColor", step.markColor)
+            item.addProperty("markSeconds", step.markSeconds)
+            item.addProperty("markShowName", step.markShowName)
+            item.addProperty("markOpacity", step.markOpacity)
+            item.addProperty("markBrightness", step.markBrightness)
+            item.addProperty("markSize", step.markSize)
+            item.addProperty("markHeight", step.markHeight)
+            item.addProperty("markPulse", step.markPulse)
+            item.addProperty("markPlayerGlow", step.markPlayerGlow)
+            item.addProperty("markMarkerGlow", step.markMarkerGlow)
+            item.addProperty("markArrowShape", step.markArrowShape)
+            item.addProperty("markSpin", step.markSpin)
+            item.addProperty("markBob", step.markBob)
+            item.addProperty("markThroughWalls", step.markThroughWalls)
+            array.add(item)
+        }
+        return array
     }
 
     fun prioritiesToJson(rules: List<LeapPriorityRule>): JsonArray {

@@ -120,7 +120,7 @@ object IcantpyPayloadManager {
     private fun prepare(cacheJar: Path, version: String): LoadedPayload {
         val urls = collectClassPathUrls(cacheJar)
         val parent = IcantpyPayload::class.java.classLoader
-        val loader = URLClassLoader(urls.toTypedArray(), parent)
+        val loader = PayloadClassLoader(urls.toTypedArray(), parent)
         try {
             val instance = resolvePayloadInstance(loader)
             val icantpyPayload = instance as? IcantpyPayload

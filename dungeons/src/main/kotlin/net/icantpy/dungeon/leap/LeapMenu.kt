@@ -112,8 +112,10 @@ object LeapMenu {
             cfg.scale,
         )
         val remaining = LeapOrientTargets.pick(LeapGameState.currentId(), cfg)?.let { pending ->
-            val seconds = LeapOrientTargets.remainingMs(pending) / 1000.0
-            "${pending.centerTitle()} · ${pending.centerReason()} ${"%.1f".format(seconds)}s"
+            val status = LeapHoldText.status(pending, LeapOrientTargets.remainingMs(pending))
+            val then = LeapHoldText.thenLine(pending, LeapOrientTargets.fallback())
+            listOfNotNull("${pending.centerTitle()} · ${pending.centerReason()} $status", then, LeapFollowUps.nextLabel())
+                .joinToString(" · ")
         }
         LeapMenuRenderer.render(
             graphics,

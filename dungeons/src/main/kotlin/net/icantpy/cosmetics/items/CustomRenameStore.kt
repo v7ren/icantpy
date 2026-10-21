@@ -102,6 +102,8 @@ object CustomRenameStore {
             shareWithOthers = obj.get("shareWithOthers")
                 ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
                 ?.asBoolean == true,
+            // Files written before the switch existed keep customisation on.
+            enabled = obj.bool("enabled", default = true),
         )
     }
 
@@ -111,6 +113,7 @@ object CustomRenameStore {
         addProperty("version", CustomRenameConfig.CURRENT_VERSION)
         addProperty("nameChromaSpeed", CustomRenameConfig.clampNameChromaSpeed(config.nameChromaSpeed))
         addProperty("shareWithOthers", config.shareWithOthers)
+        addProperty("enabled", config.enabled)
         add("names", com.google.gson.JsonObject().apply {
             config.names.forEach { (uuid, name) -> addProperty(uuid, CustomRenameText.normalize(name)) }
         })

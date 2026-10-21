@@ -2,6 +2,9 @@ package net.icantpy.qol.waypoint
 
 import net.icantpy.dungeon.ChatClocks
 import net.icantpy.dungeon.DungeonListener
+import net.icantpy.location.LocationSnapshot
+import net.icantpy.location.SkyblockIsland
+import net.icantpy.location.SkyblockLocation
 import net.icantpy.util.Text
 
 data class WaypointWorld(val key: String) {
@@ -56,8 +59,25 @@ data class WaypointWorld(val key: String) {
 }
 
 object SkyblockWorlds {
+    /** Tab-style "Area: X" text, still accepted by [fromSidebar] for lines that carry it. */
     private val AREA = Regex("""^Area:\s*(.+)$""", RegexOption.IGNORE_CASE)
 
+    /** Waypoint world for the current location: the tab-list island first, then the sidebar lines. */
+    fun current(): WaypointWorld = worldFor(SkyblockLocation.snapshot, DungeonListener.sidebarLines())
+
+    fun worldFor(snapshot: LocationSnapshot, sidebar: Iterable<String>): WaypointWorld {
+        if (snapshot.inDungeon) return WaypointWorld(WaypointWorld.DUNGEON)
+        val key = when (snapshot.island) {
+            SkyblockIsland.DUNGEON_HUB -> WaypointWorld.DUNGEON_HUB
+            SkyblockIsland.HUB -> WaypointWorld.HUB
+            SkyblockIsland.PRIVATE_ISLAND -> WaypointWorld.ISLAND
+            SkyblockIsland.GARDEN -> WaypointWorld.GARDEN
+            else -> return fromSidebar(sidebar)
+        }
+        return WaypointWorld(key)
+    }
+
+    /** Sidebar fallback for when the tab list has not named an island yet. */
     fun fromSidebar(lines: Iterable<String>): WaypointWorld {
         val stripped = lines.map { Text.strip(it) }
         if (ChatClocks.inDungeon(stripped)) {
@@ -78,20 +98,23 @@ object SkyblockWorlds {
         return WaypointWorld(WaypointWorld.UNKNOWN)
     }
 
+    /** Maps a tab-list area name to a waypoint world key. Unknown names keep their normalized text. */
     fun fromAreaName(area: String): WaypointWorld {
-        val normalized = Text.strip(area).lowercase()
-        val key = when (normalized) {
-            "hub", "village" -> WaypointWorld.HUB
-            "dungeon hub" -> WaypointWorld.DUNGEON_HUB
-            "private island", "your island", "island" -> WaypointWorld.ISLAND
-            "garden" -> WaypointWorld.GARDEN
-            "catacombs", "the catacombs", "dungeon" -> WaypointWorld.DUNGEON
-            else -> normalized.replace(' ', '_')
+        val island = SkyblockIsland.fromTabName(Text.strip(area))
+        val key = when (island) {
+            SkyblockIsland.HUB -> WaypointWorld.HUB
+            SkyblockIsland.DUNGEON_HUB -> WaypointWorld.DUNGEON_HUB
+            SkyblockIsland.PRIVATE_ISLAND -> WaypointWorld.ISLAND
+            SkyblockIsland.GARDEN -> WaypointWorld.GARDEN
+            SkyblockIsland.CATACOMBS -> WaypointWorld.DUNGEON
+            else -> when (Text.strip(area).lowercase()) {
+                "village" -> WaypointWorld.HUB
+                "your island", "island" -> WaypointWorld.ISLAND
+                else -> Text.strip(area).lowercase().replace(' ', '_')
+            }
         }
         return WaypointWorld(key)
     }
-
-    fun current(): WaypointWorld = fromSidebar(DungeonListener.sidebarLines())
 
     fun placeWorld(): String {
         val current = current()

@@ -54,6 +54,26 @@ object LeapRoster {
         teammates.firstOrNull { it.name.equals(name, ignoreCase = true) }
             ?: LeapPlayer(name, clazz.takeIf { it.isReal() } ?: classOf(name, LeapOrient.settings()))
 
+    private const val MARKER_NAME_CACHE_MS = 500L
+    private var markerNames: Map<String, String> = emptyMap()
+    private var markerNamesAt = Long.MIN_VALUE
+
+    /**
+     * Teammate name for a marker class token such as "HEALER", or null when nobody of that class is known.
+     * The marker renderer asks every frame, so the roster is re-read at most every [MARKER_NAME_CACHE_MS].
+     */
+    @Synchronized
+    fun nameForMarkerClass(token: String): String? {
+        val now = System.currentTimeMillis()
+        if (now - markerNamesAt > MARKER_NAME_CACHE_MS || now < markerNamesAt) {
+            markerNames = LeapDungeonClass.PLAYABLE.mapNotNull { clazz ->
+                playerForClass(clazz, emptyList())?.let { clazz.name to it.name }
+            }.toMap()
+            markerNamesAt = now
+        }
+        return markerNames[token]
+    }
+
     fun playerForClass(clazz: LeapDungeonClass, teammates: List<LeapPlayer>): LeapPlayer? {
         if (!clazz.isReal()) return null
         teammates.firstOrNull { it.clazz == clazz }?.let { return it }

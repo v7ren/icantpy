@@ -27,10 +27,10 @@ class LeapBossFlowTest {
         bars.add(id, "Maxor", 1f)!!.let { tracker.onBossBars(listOf(LeapBossBar(it.name, it.progress))) }
         val events = bars.progress(id, 0f)!!.let { tracker.onBossBars(listOf(LeapBossBar(it.name, it.progress))) }
         bars.remove(id)
-        assertEquals(listOf(LeapTriggerEvent.BOSS_STORM_START), events)
+        assertEquals(listOf(LeapTriggerEvent.MAXOR_DEATH), events)
         arm(events.single(), LeapDungeonClass.HEALER, tracker.phase)
         assertEquals(LeapDungeonClass.BERSERK, pick("m7p2"))
-        assertTrue(tracker.onChat("[BOSS] Storm: Pathetic Maxor, just like expected.").isEmpty())
+        assertEquals(listOf(LeapTriggerEvent.BOSS_STORM_START), tracker.onChat("[BOSS] Storm: Pathetic Maxor, just like expected."))
     }
 
     @Test

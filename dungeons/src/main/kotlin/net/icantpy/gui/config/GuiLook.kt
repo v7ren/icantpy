@@ -93,9 +93,9 @@ data class GuiLookSettings(
     val theme: GuiThemeId = GuiThemeId.MIDNIGHT,
     val font: GuiFontId = GuiFontId.SEGOE,
     val accentHex: String = "",
-    val radius: Int = 2,
-    val controlRadius: Int = 0,
-    val backgroundBlur: Boolean = false,
+    val radius: Int = 12,
+    val controlRadius: Int = 8,
+    val backgroundBlur: Boolean = true,
 ) {
     fun resolvedAccent(): Int? =
         accentHex.trim().takeIf { it.isNotEmpty() }?.let { HexColor.parse(it).getOrNull() }
@@ -105,7 +105,7 @@ data class GuiLookSettings(
     fun withControlRadius(value: Int): GuiLookSettings = copy(controlRadius = value.coerceIn(0, 12))
 
     companion object {
-        val RADIUS_PRESETS: List<Int> = listOf(0, 2, 4, 8)
+        val RADIUS_PRESETS: List<Int> = listOf(0, 4, 8, 12)
 
         fun fromJson(obj: JsonObject?): GuiLookSettings {
             if (obj == null) return GuiLookSettings()
@@ -114,9 +114,9 @@ data class GuiLookSettings(
                 theme = GuiThemeId.parse(string(obj, "theme")),
                 font = GuiFontId.parse(string(obj, "font")),
                 accentHex = string(obj, "accent").orEmpty(),
-                radius = int(obj, "radius", 2).coerceIn(0, 12),
-                controlRadius = int(obj, "controlRadius", 0).coerceIn(0, 12),
-                backgroundBlur = bool(obj, "blur", false),
+                radius = int(obj, "radius", 12).coerceIn(0, 12),
+                controlRadius = int(obj, "controlRadius", 8).coerceIn(0, 12),
+                backgroundBlur = bool(obj, "blur", true),
             )
         }
 
@@ -154,6 +154,7 @@ internal data class GuiPalette(
     val secondary: Int,
     val tertiary: Int,
     val accent: Int,
+    val activeAccent: Int,
     val accentSoft: Int,
     val accentInk: Int,
     val line: Int,
@@ -173,7 +174,7 @@ internal data class GuiChrome(
 ) {
     val cardRadius: Float
         get() = when (layout) {
-            GuiLayoutId.RAIL -> radius
+            GuiLayoutId.RAIL -> radius.coerceAtMost(10f)
             GuiLayoutId.RIBBON -> 0f
             GuiLayoutId.COMPACT -> 0f
         }
@@ -202,43 +203,36 @@ internal data class ConfigMetrics(
     val tabBar: Int,
     val pageBar: Int,
     val row: Int,
+    /** Caps the width of page rows so wide windows do not stretch controls across the panel. */
+    val maxContentWidth: Int = Int.MAX_VALUE,
 ) {
     val viewTop: Int get() = panelY + header + tabBar + pageBar
     val viewBottom: Int get() = panelY + panelH - footer
     val viewHeight: Int get() = (viewBottom - viewTop).coerceAtLeast(1)
     val contentLeft: Int get() = panelX + sidebar
     val innerLeft: Int get() = contentLeft + if (sidebar == 0) 18 else 16
-    val innerWidth: Int get() = panelW - sidebar - if (sidebar == 0) 36 else 32
-    fun rightX(controlWidth: Int): Int = panelX + panelW - 24 - controlWidth
-
-    fun railNavPitch(): Int {
-        val available = panelH - header - 12
-        return (available / ConfigTab.entries.size).coerceIn(28, 48)
-    }
-
-    fun compactNavPitch(): Int {
-        val available = panelH - 16
-        return (available / ConfigTab.entries.size).coerceIn(24, 42)
-    }
+    val innerWidth: Int get() = (panelW - sidebar - if (sidebar == 0) 36 else 32).coerceAtMost(maxContentWidth)
+    /** Right edge for a control, inset 8px from the row edge like the other row controls. */
+    fun rightX(controlWidth: Int): Int = innerLeft + innerWidth - 8 - controlWidth
 
     companion object {
         fun compute(screenW: Int, screenH: Int, look: GuiLookSettings): ConfigMetrics {
-            val panelW = (screenW - 28).coerceAtMost(760).coerceAtLeast(minOf(520, screenW - 16))
-            val panelH = (screenH - 24).coerceAtMost(500).coerceAtLeast(minOf(340, screenH - 14))
+            val panelW = (screenW - 36).coerceAtMost(700).coerceAtLeast(minOf(460, screenW - 16))
+            val panelH = (screenH - 36).coerceAtMost(460).coerceAtLeast(minOf(300, screenH - 14))
             val panelX = (screenW - panelW) / 2
             val panelY = (screenH - panelH) / 2
             return when (look.layout) {
                 GuiLayoutId.RAIL -> ConfigMetrics(
                     screenW, screenH, panelX, panelY, panelW, panelH,
-                    header = 44, footer = 28, sidebar = 160, tabBar = 0, pageBar = 32, row = 46,
+                    header = 50, footer = 0, sidebar = 156, tabBar = 0, pageBar = 30, row = 38,
                 )
                 GuiLayoutId.RIBBON -> ConfigMetrics(
                     screenW, screenH, panelX, panelY, panelW, panelH,
-                    header = 44, footer = 28, sidebar = 0, tabBar = 34, pageBar = 32, row = 44,
+                    header = 34, footer = 0, sidebar = 0, tabBar = 30, pageBar = 30, row = 38,
                 )
                 GuiLayoutId.COMPACT -> ConfigMetrics(
                     screenW, screenH, panelX, panelY, panelW, panelH,
-                    header = 40, footer = 28, sidebar = 52, tabBar = 0, pageBar = 28, row = 38,
+                    header = 32, footer = 0, sidebar = 42, tabBar = 0, pageBar = 28, row = 34,
                 )
             }
         }
@@ -248,24 +242,26 @@ internal data class ConfigMetrics(
 internal fun GuiThemeId.palette(accentRgb: Int?): GuiPalette {
     val base = when (this) {
         GuiThemeId.MIDNIGHT -> GuiPalette(
-            scrim = 0xF0000000.toInt(),
-            window = 0xFF09090B.toInt(),
-            sidebar = 0xFF09090B.toInt(),
-            header = 0xFF09090B.toInt(),
-            group = 0xFF121215.toInt(),
-            rowHover = 0xFF18181B.toInt(),
-            text = 0xFFFAFAFA.toInt(),
-            secondary = 0xFFA1A1AA.toInt(),
-            tertiary = 0xFF52525B.toInt(),
-            accent = 0xFFFAFAFA.toInt(),
-            accentSoft = 0xFF121215.toInt(),
-            accentInk = 0xFF000000.toInt(),
-            line = 0xFF27272A.toInt(),
-            trackOff = 0xFF09090B.toInt(),
-            knob = 0xFF52525B.toInt(),
-            danger = 0xFFA1A1AA.toInt(),
-            dangerSoft = 0xFF18181B.toInt(),
-            field = 0xFF09090B.toInt(),
+            // Aether reference: charcoal glass, lavender primary, and cyan/pink ambient accents.
+            scrim = 0xF0050607.toInt(),
+            window = 0xF01B1D22.toInt(),
+            sidebar = 0xF00C0D0F.toInt(),
+            header = 0xC21A1D23.toInt(),
+            group = 0xE81F2125.toInt(),
+            rowHover = 0xF026282D.toInt(),
+            text = 0xFFEEF0F3.toInt(),
+            secondary = 0xFFA1A6AE.toInt(),
+            tertiary = 0xFF696E77.toInt(),
+            accent = 0xFFC9BBFF.toInt(),
+            activeAccent = 0xFFA68BF0.toInt(),
+            accentSoft = 0x2BA589F0,
+            accentInk = 0xFFF5F1FF.toInt(),
+            line = 0x14FFFFFF,
+            trackOff = 0xFF23272A.toInt(),
+            knob = 0xFF9496A1.toInt(),
+            danger = 0xFFF87171.toInt(),
+            dangerSoft = 0x33F87171,
+            field = 0xFF15171B.toInt(),
         )
         GuiThemeId.PHOSPHOR -> GuiPalette(
             scrim = 0xC2000000.toInt(),
@@ -278,6 +274,7 @@ internal fun GuiThemeId.palette(accentRgb: Int?): GuiPalette {
             secondary = 0xFF7CB894.toInt(),
             tertiary = 0xFF4E7A5E.toInt(),
             accent = 0xFF3DFF8A.toInt(),
+            activeAccent = 0xFF3DFF8A.toInt(),
             accentSoft = 0x333DFF8A,
             accentInk = 0xFF031208.toInt(),
             line = 0xFF1C3A24.toInt(),
@@ -298,6 +295,7 @@ internal fun GuiThemeId.palette(accentRgb: Int?): GuiPalette {
             secondary = 0xFF5C584F.toInt(),
             tertiary = 0xFF8A8478.toInt(),
             accent = 0xFF1F5EFF.toInt(),
+            activeAccent = 0xFF1F5EFF.toInt(),
             accentSoft = 0x221F5EFF,
             accentInk = 0xFFFFFFFF.toInt(),
             line = 0xFFD4CFC3.toInt(),
@@ -312,6 +310,7 @@ internal fun GuiThemeId.palette(accentRgb: Int?): GuiPalette {
     val accent = rgb or 0xFF000000.toInt()
     return base.copy(
         accent = accent,
+        activeAccent = accent,
         accentSoft = (accent and 0x00FFFFFF) or 0x33000000,
         accentInk = inkOn(accent),
     )

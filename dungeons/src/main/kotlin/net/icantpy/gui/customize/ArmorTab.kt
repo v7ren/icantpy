@@ -40,13 +40,16 @@ class ArmorTab(private val parent: CustomizeScreen) : GridLayoutTab(Component.li
     private val modelFieldContainer: ModelFieldContainer
     private var nothingCustomizable = false
 
-    private val player: RemotePlayer = object : RemotePlayer(CLIENT.level!!, CLIENT.gameProfile) {
-        override fun isInvisibleTo(player: Player) = true
-        override fun onEquipItem(slot: EquipmentSlot, oldStack: ItemStack, newStack: ItemStack) {}
-        override fun isModelPartShown(modelPart: PlayerModelPart): Boolean =
-            modelPart != PlayerModelPart.CAPE && CLIENT.options.isModelPartEnabled(modelPart)
+    /** Null when not in a world; the preview widget is then skipped. */
+    private val player: RemotePlayer? = CLIENT.level?.let { level ->
+        object : RemotePlayer(level, CLIENT.gameProfile) {
+            override fun isInvisibleTo(player: Player) = true
+            override fun onEquipItem(slot: EquipmentSlot, oldStack: ItemStack, newStack: ItemStack) {}
+            override fun isModelPartShown(modelPart: PlayerModelPart): Boolean =
+                modelPart != PlayerModelPart.CAPE && CLIENT.options.isModelPartEnabled(modelPart)
 
-        override fun getId(): Int = PLACEHOLDER_ID
+            override fun getId(): Int = PLACEHOLDER_ID
+        }
     }
 
     init {
@@ -55,13 +58,13 @@ class ArmorTab(private val parent: CustomizeScreen) : GridLayoutTab(Component.li
         val list = ARMOR_SLOTS.map { CLIENT.player?.getItemBySlot(it)?.copy() ?: ItemStack.EMPTY }
         for (i in list.indices) {
             armor[3 - i] = list[i]
-            player.setItemSlot(ARMOR_SLOTS[i], list[i])
+            player?.setItemSlot(ARMOR_SLOTS[i], list[i])
         }
         while (selectedSlot < armor.size - 1 && !canEdit(armor[selectedSlot]!!)) selectedSlot++
         nothingCustomizable = !canEdit(armor[selectedSlot]!!)
 
         val vertical = LinearLayout.vertical().spacing(1)
-        vertical.addChild(PlayerWidget(0, 0, 84, 165, player))
+        player?.let { vertical.addChild(PlayerWidget(0, 0, 84, 165, it)) }
         vertical.addChild(PieceSelectionWidget(0, 0))
         layout.addChild(vertical, 0, 0, 2, 1, LayoutSettings::alignVerticallyMiddle)
 
@@ -117,7 +120,7 @@ class ArmorTab(private val parent: CustomizeScreen) : GridLayoutTab(Component.li
     }
 
     fun tick() {
-        player.tickCount++
+        player?.let { it.tickCount++ }
         HeadTextures.tick()
     }
 

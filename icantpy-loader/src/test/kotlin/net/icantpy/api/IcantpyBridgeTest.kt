@@ -69,6 +69,27 @@ class IcantpyBridgeTest {
     }
 
     @Test
+    fun entityGlowResultMapsToRgbOrNoGlow() {
+        assertEquals(
+            IcantpyBridge.NO_GLOW,
+            IcantpyBridge.glowColorFromResult(IcantpyQueryResult(IcantpyDispatchResult.PASS)),
+        )
+        assertEquals(
+            IcantpyBridge.NO_GLOW,
+            IcantpyBridge.glowColorFromResult(IcantpyQueryResult(IcantpyDispatchResult.HANDLED, "red")),
+        )
+        assertEquals(
+            0x00FF88,
+            IcantpyBridge.glowColorFromResult(IcantpyQueryResult(IcantpyDispatchResult.HANDLED, 0xFF00FF88.toInt())),
+        )
+    }
+
+    @Test
+    fun entityGlowIsNoGlowWithoutPayload() {
+        assertEquals(IcantpyBridge.NO_GLOW, IcantpyBridge.entityGlowColor(42))
+    }
+
+    @Test
     fun runtimeEventCopiesContextAndRejectsInvalidIds() {
         val source = mutableMapOf<String, Any?>("message" to "hello")
         val event = IcantpyRuntimeEvent("network.chat.incoming", context = source)

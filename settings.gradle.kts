@@ -21,3 +21,5 @@ rootProject.name = "icantpy"
 include("dungeons")
 include("payload-2612")
 include("icantpy-loader")
+include("proxy-mod")
+include("proxy-mod-2612")

@@ -10,6 +10,7 @@ import java.awt.Desktop
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Locale
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
@@ -17,8 +18,16 @@ import javax.sound.sampled.DataLine
 import javax.sound.sampled.SourceDataLine
 
 object AlertSounds {
-    private val playback = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "icantpy-alert-sound").apply { isDaemon = true }
+    private var playbackExecutor: ExecutorService? = null
+
+    private fun playback(): ExecutorService =
+        playbackExecutor ?: Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "icantpy-alert-sound").apply { isDaemon = true }
+        }.also { playbackExecutor = it }
+
+    fun onUnload() {
+        playbackExecutor?.shutdownNow()
+        playbackExecutor = null
     }
 
     fun directory(): Path =
@@ -102,7 +111,7 @@ object AlertSounds {
             return
         }
         val file = resolve(key) ?: return
-        playback.execute { playFile(file) }
+        playback().execute { playFile(file) }
     }
 
     fun resolve(name: String, dir: Path = directory()): Path? {

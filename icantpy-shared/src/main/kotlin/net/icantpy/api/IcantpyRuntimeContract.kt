@@ -14,6 +14,7 @@ object IcantpyRuntimeContract {
         "lifecycle.join",
         "lifecycle.disconnect",
         "network.inbound",
+        "world.particle",
         "commands.root",
         "input.native",
         "input.action",
@@ -23,6 +24,7 @@ object IcantpyRuntimeContract {
         "render.hud",
         "render.world",
         "appearance.item",
+        "render.entity_glow",
     )
 }
 

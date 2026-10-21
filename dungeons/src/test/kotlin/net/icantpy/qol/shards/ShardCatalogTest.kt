@@ -40,5 +40,9 @@ class ShardCatalogTest {
         assertEquals("Flash", ShardCatalog.resolve("SHARD_FLASH")!!.displayName)
         assertNull(ShardCatalog.resolve("definitely not a shard"))
         assertEquals("Echo of Elemental", ShardCatalog.resolve("Starborn")!!.abilityName)
+        assertEquals("Harpy", ShardCatalog.resolve("Tree Lurker")!!.displayName)
+        assertEquals("Harpy", ShardCatalog.resolve("treelurker")!!.displayName)
+        assertEquals("Harpy", ShardCatalog.resolve("Harpy Shard")!!.displayName)
+        assertEquals("Harpy", ShardCatalog.resolve("C24")!!.displayName)
     }
 }

@@ -13,6 +13,8 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.renderer.texture.AbstractTexture
 import net.minecraft.resources.Identifier
+import net.icantpy.hud.SkiaFrameKey
+import net.icantpy.hud.SkiaRedrawGate
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
@@ -100,6 +102,7 @@ class SkiaSurface {
     private var textureRegistered = false
     private val pendingCleanup = mutableListOf<DeferredCleanup>()
     private val recordedCalls: ArrayDeque<GuiGraphicsExtractor.() -> Unit> = ArrayDeque()
+    private val redrawGate = SkiaRedrawGate()
 
     fun resize(width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
@@ -108,6 +111,7 @@ class SkiaSurface {
         skiaTexture.clearRefs()
         active?.let { pendingCleanup.add(DeferredCleanup(it)) }
         active = null
+        redrawGate.invalidate()
         currentWidth = width
         currentHeight = height
 
@@ -163,6 +167,7 @@ class SkiaSurface {
     }
 
     fun extractRenderState(guiGraphics: GuiGraphicsExtractor, render: (Canvas) -> Unit) {
+        redrawGate.invalidate()
         val res = beginFrame() ?: return
         val scale = skiaGuiScale(Minecraft.getInstance().window.width, guiGraphics.guiWidth())
         SkiaContext.run {
@@ -178,7 +183,39 @@ class SkiaSurface {
         endFrame(guiGraphics)
     }
 
+    /**
+     * Redraws only when [contentKey], the window size or the GUI scale changed since the last redraw. Otherwise the
+     * texture from the last redraw is blitted again. [contentKey] must cover everything [render] draws.
+     */
+    fun paintCached(guiGraphics: GuiGraphicsExtractor, contentKey: Any, render: (org.jetbrains.skia.Canvas) -> Unit) {
+        val window = Minecraft.getInstance().window
+        val scale = skiaGuiScale(window.width, guiGraphics.guiWidth())
+        val key = SkiaFrameKey(window.width, window.height, scale, contentKey)
+        val res = beginFrame() ?: return
+        if (redrawGate.needsRedraw(key)) {
+            redrawGate.invalidate()
+            SkiaContext.run {
+                SkiaContext.directContext.resetGLAll()
+                val canvas = res.skiaSurface.canvas
+                canvas.clear(0)
+                canvas.save()
+                canvas.scale(scale, scale)
+                render(canvas)
+                canvas.restore()
+                res.skiaSurface.flushAndSubmit()
+            }
+            redrawGate.markDrawn(key)
+        }
+        endFrame(guiGraphics)
+    }
+
+    /** Forces the next [paintCached] call to redraw, e.g. when the HUD editor or config screen opens or closes. */
+    fun invalidateContent() {
+        redrawGate.invalidate()
+    }
+
     fun paint(guiGraphics: GuiGraphicsExtractor, render: (org.jetbrains.skia.Canvas) -> Unit) {
+        redrawGate.invalidate()
         val res = beginFrame() ?: return
         val scale = skiaGuiScale(Minecraft.getInstance().window.width, guiGraphics.guiWidth())
         SkiaContext.run {
@@ -195,6 +232,7 @@ class SkiaSurface {
     }
 
     fun close() {
+        redrawGate.invalidate()
         recordedCalls.clear()
         skiaTexture.clearRefs()
         active?.let { pendingCleanup.add(DeferredCleanup(it)) }

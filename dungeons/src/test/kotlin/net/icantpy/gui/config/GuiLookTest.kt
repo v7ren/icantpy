@@ -41,7 +41,7 @@ class GuiLookTest {
         assertNull(GuiLookSettings().resolvedAccent())
         val midnight = GuiThemeId.MIDNIGHT.palette(null)
         val overridden = GuiThemeId.MIDNIGHT.palette(0xFF5C8A)
-        assertEquals(0xFFFAFAFA.toInt(), midnight.accent)
+        assertEquals(0xFFC9BBFF.toInt(), midnight.accent)
         assertEquals(0xFFFF5C8A.toInt(), overridden.accent)
         assertTrue(overridden.accent != midnight.accent)
     }
@@ -64,24 +64,51 @@ class GuiLookTest {
     }
 
     @Test
-    fun railNavFitsOnDefault1080pGuiScale() {
+    fun railSidebarScrollsWhenPagesDoNotFitTheDefaultGuiScale() {
         val rail = ConfigMetrics.compute(480, 270, GuiLookSettings(layout = GuiLayoutId.RAIL))
-        val lastBottom = rail.panelY + rail.header + 4 + rail.railNavPitch() * ConfigTab.entries.size
-        assertTrue(lastBottom <= rail.panelY + rail.panelH)
-        val compact = ConfigMetrics.compute(480, 270, GuiLookSettings(layout = GuiLayoutId.COMPACT))
-        val compactBottom = compact.panelY + 8 + compact.compactNavPitch() * ConfigTab.entries.size
-        assertTrue(compactBottom <= compact.panelY + compact.panelH)
+        val viewport = sidebarBottom(rail) - sidebarTop(rail)
+        assertTrue(sidebarContentHeight() > viewport)
+        // The brand mark occupies the top 32px of the rail; the page list must start below it.
+        assertTrue(sidebarTop(rail) - rail.panelY >= 32)
+    }
+
+    @Test
+    fun railSidebarIsWideEnoughForPageNamesAndPanelHeightIsCapped() {
+        val rail = ConfigMetrics.compute(1920, 1200, GuiLookSettings(layout = GuiLayoutId.RAIL))
+        assertTrue(rail.sidebar >= 156)
+        assertEquals(460, rail.panelH)
+        assertEquals(700, rail.panelW)
+        val shortScreen = ConfigMetrics.compute(800, 360, GuiLookSettings(layout = GuiLayoutId.RAIL))
+        assertEquals(324, shortScreen.panelH)
     }
 
     @Test
     fun radiusZeroMakesCardsSquare() {
-        val chrome = GuiChrome.of(GuiLookSettings(layout = GuiLayoutId.RIBBON, radius = 8))
+        val chrome = GuiChrome.of(GuiLookSettings(layout = GuiLayoutId.RIBBON, radius = 8, controlRadius = 0))
         assertEquals(0f, chrome.cardRadius)
         assertEquals(8f, chrome.radius)
         assertEquals(0f, chrome.controlRadius)
         assertEquals(8f, GuiChrome.of(GuiLookSettings(controlRadius = 8)).controlRadius)
         val compact = GuiChrome.of(GuiLookSettings(layout = GuiLayoutId.COMPACT, radius = 8))
         assertEquals(0f, compact.cardRadius)
-        assertFalse(GuiLookSettings().backgroundBlur)
+        assertTrue(GuiLookSettings().backgroundBlur)
+    }
+
+    @Test
+    fun featureInventoryMatchesReferenceSections() {
+        assertEquals(24, AetherModules.all.size)
+        fun featureCount(section: ConfigSection) = ConfigPage.entries
+            .filter { it.section == section }
+            .sumOf { it.moduleIds.size }
+        assertEquals(7, featureCount(ConfigSection.DUNGEONS))
+        assertEquals(8, featureCount(ConfigSection.QOL))
+        assertEquals(2, featureCount(ConfigSection.INTERFACE))
+        assertTrue(ConfigPage.LEAP in ConfigNav.search("leap"))
+    }
+
+    @Test
+    fun fontStylesUseConstructorWeights() {
+        assertEquals(400, SkiaFonts.normal.weight)
+        assertEquals(700, SkiaFonts.bold.weight)
     }
 }

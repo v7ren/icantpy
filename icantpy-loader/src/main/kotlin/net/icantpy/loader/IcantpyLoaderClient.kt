@@ -28,6 +28,8 @@ object IcantpyLoaderClient : ClientModInitializer {
 
         IcantpyLoaderKeys.register()
         IcantpyLoaderEvents.register()
+        // Startup-only: the proxy mixins are loader infrastructure, so its UI is registered here rather than in the payload.
+        net.icantpy.proxy.ProxyClient.init()
         registerClientCommands()
 
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("icantpy", "tick-timers")) { graphics, _ ->

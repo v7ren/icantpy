@@ -14,8 +14,10 @@ import net.icantpy.slayer.SlayerCarrySettings
 import net.icantpy.qol.stats.StatsArmorSettings
 import net.icantpy.qol.waypoint.CommandWaypoint
 import net.icantpy.qol.waypoint.WaypointWorld
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 object IcantpySettingsStore {
@@ -99,6 +101,7 @@ object IcantpySettingsStore {
             )
         } catch (exception: Exception) {
             Icantpy.LOGGER.warn("Failed to read icantpy settings; using defaults", exception)
+            moveInvalidAside(path)
             TimerSettings()
         }
     }
@@ -178,9 +181,25 @@ object IcantpySettingsStore {
             obj.add("statsArmor", settings.statsArmor.toJson())
             obj.add("dropUltimate", settings.dropUltimate.toJson())
             obj.add("slayer", settings.slayer.toJson())
-            Files.writeString(path, GSON.toJson(obj) + "\n")
+            val temp = path.resolveSibling(path.fileName.toString() + ".tmp")
+            Files.writeString(temp, GSON.toJson(obj) + "\n")
+            try {
+                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING)
+            }
         } catch (exception: Exception) {
             Icantpy.LOGGER.warn("Failed to write icantpy settings", exception)
+        }
+    }
+
+    private fun moveInvalidAside(path: Path) {
+        try {
+            val backup = path.resolveSibling(path.fileName.toString() + ".invalid." + System.currentTimeMillis())
+            Files.move(path, backup, StandardCopyOption.REPLACE_EXISTING)
+            Icantpy.LOGGER.warn("Moved malformed icantpy settings to {}", backup)
+        } catch (exception: Exception) {
+            Icantpy.LOGGER.warn("Could not move malformed icantpy settings aside", exception)
         }
     }
 

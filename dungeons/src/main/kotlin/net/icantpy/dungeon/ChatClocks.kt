@@ -1,5 +1,6 @@
 package net.icantpy.dungeon
 
+import net.icantpy.location.SkyblockIsland
 import net.icantpy.util.Text
 
 object ChatClocks {
@@ -15,7 +16,9 @@ object ChatClocks {
         return DungeonFloor.NONE
     }
 
-    fun inDungeon(lines: Iterable<String>): Boolean {
+    /** True on the Catacombs island (tab list) or when a dungeon line shows in the sidebar or chat. */
+    fun inDungeon(lines: Iterable<String>, island: SkyblockIsland = SkyblockIsland.UNKNOWN): Boolean {
+        if (island == SkyblockIsland.CATACOMBS) return true
         return lines.any { raw ->
             val line = Text.strip(raw)
             line.contains("Catacombs", ignoreCase = true) ||
@@ -35,9 +38,18 @@ object ChatClocks {
         return null
     }
 
-    fun elsewhere(lines: Iterable<String>): Boolean {
-        if (inDungeon(lines)) return false
+    /** Islands outside the dungeon, read from the tab list by [net.icantpy.location.SkyblockLocation]. */
+    private val ELSEWHERE_ISLANDS = setOf(
+        SkyblockIsland.HUB,
+        SkyblockIsland.DUNGEON_HUB,
+        SkyblockIsland.PRIVATE_ISLAND,
+        SkyblockIsland.GARDEN,
+    )
+
+    fun elsewhere(lines: Iterable<String>, island: SkyblockIsland = SkyblockIsland.UNKNOWN): Boolean {
+        if (inDungeon(lines, island)) return false
         if (floorFromLines(lines) != DungeonFloor.NONE) return false
+        if (island in ELSEWHERE_ISLANDS) return true
         return lines.any { raw ->
             val line = Text.strip(raw)
             line.contains("SkyBlock Hub", ignoreCase = true) ||

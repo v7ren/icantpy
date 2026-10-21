@@ -11,65 +11,30 @@ import org.jetbrains.skia.Paint
 import org.jetbrains.skia.RRect
 import org.jetbrains.skia.Rect
 
-internal enum class ConfigTab(
-    private val title: String,
-    private val detail: String,
-    private val compact: String,
-) {
-    DUNGEONS("Dungeons", "Timers, leap, alerts", "DUNG"),
-    COSMETICS("Cosmetics", "Items and morph", "COSM"),
-    QOL("QoL", "Camera, boxes, stats, combat", "QOL"),
-    SLAYER("Slayer", "Carry counter", "SLAY"),
-    GUI("GUI", "Layout and theme", "GUI"),
-    ;
+internal const val TAB_PADDING = 11
+internal const val TOGGLE_WIDTH = 34
+internal const val TOGGLE_HEIGHT = 18
+private const val DROPDOWN_ITEM_HEIGHT = 22
+private const val DROPDOWN_HEADER_HEIGHT = 18
 
-    fun label(): String = title
-    fun caption(): String = detail
-    fun shortLabel(): String = compact
+/** One line of a grouped dropdown: [option] is the index of a choice, or null for a non-clickable header. */
+data class DropdownLine(val label: String, val option: Int?)
 
-    fun pages(): List<String> = when (this) {
-        DUNGEONS -> DungeonPage.entries.map { it.label() }
-        COSMETICS -> CosmeticsPage.entries.map { it.label() }
-        QOL -> QolPage.entries.map { it.label() }
-        SLAYER -> SlayerPage.entries.map { it.label() }
-        GUI -> listOf("Theme")
-    }
-}
+internal fun dropdownLineHeight(line: DropdownLine): Int =
+    if (line.option == null) DROPDOWN_HEADER_HEIGHT else DROPDOWN_ITEM_HEIGHT
 
-internal enum class DungeonPage(val title: String) {
-    TIMERS("Timer"),
-    ALERTS("Alerts"),
-    LEAP("Leap"),
-    ;
+internal fun dropdownLinesHeight(lines: List<DropdownLine>): Int = lines.sumOf { dropdownLineHeight(it) } + 4
+private const val SELECT_PAD = 10
+private const val SELECT_CHEVRON_SIZE = 8
 
-    fun label(): String = title
-}
-
-internal enum class CosmeticsPage(val title: String) {
-    ITEMS("Items"),
-    MORPH("Morph"),
-    ;
-
-    fun label(): String = title
-}
-
-internal enum class QolPage(val title: String) {
-    CAMERA("Camera"),
-    BOXES("Boxes"),
-    STATS("Stats"),
-    COMBAT("Combat"),
-    SHARDS("Shards"),
-    ;
-
-    fun label(): String = title
-}
-
-internal enum class SlayerPage(val title: String) {
-    CARRIES("Carries"),
-    ;
-
-    fun label(): String = title
-}
+/** Approximate text line box; a 28px field keeps the historical 6px text offset. */
+private const val FIELD_TEXT_BOX = 16
+private const val TOGGLE_INSET = 3
+private const val TOGGLE_KNOB = 12
+private const val TOGGLE_MAX_TRACK_RADIUS = 9f
+private const val SCROLLBAR_WIDTH = 2
+private const val FADE_HEIGHT = 14
+private const val FADE_STEPS = 7
 
 internal enum class ButtonStyle {
     PRIMARY,
@@ -79,25 +44,34 @@ internal enum class ButtonStyle {
 
 internal class MenuDraw(
     val canvas: Canvas,
-    val clipTop: Int,
-    val clipBottom: Int,
-    val clipLeft: Int,
-    val clipRight: Int,
+    var clipTop: Int,
+    var clipBottom: Int,
+    var clipLeft: Int,
+    var clipRight: Int,
     val mouseX: Int = Int.MIN_VALUE,
     val mouseY: Int = Int.MIN_VALUE,
     val chrome: GuiChrome,
 ) {
     val hits = mutableListOf<GuiHit>()
+    private val chevronPaint = Paint().apply {
+        setStroke(true)
+        strokeWidth = 1.6f
+        isAntiAlias = true
+    }
     val palette: GuiPalette = chrome.palette
     val radius: Float = chrome.radius
-    val titleFont = sized(chrome.typefaces.mono, 16f)
-    val headingFont = sized(chrome.typefaces.mono, 11f)
-    val bodyFont = sized(chrome.typefaces.semibold, 13f)
-    val descFont = sized(chrome.typefaces.regular, 11.5f)
-    val buttonFont = sized(chrome.typefaces.mono, 11f)
-    val smallFont = sized(chrome.typefaces.regular, 11.5f)
-    val microFont = sized(chrome.typefaces.mono, 10.5f)
+    val titleFont = sized(chrome.typefaces.semibold, 12f)
+    val headingFont = sized(chrome.typefaces.semibold, 9.5f)
+    val bodyFont = sized(chrome.typefaces.semibold, 10.5f)
+    val descFont = sized(chrome.typefaces.regular, 9.5f)
+    val buttonFont = sized(chrome.typefaces.regular, 10f)
+    val smallFont = sized(chrome.typefaces.regular, 9.5f)
+    val microFont = sized(chrome.typefaces.mono, 8.5f)
+    val captionFont = sized(chrome.typefaces.regular, 9f)
+    val displayFont = sized(chrome.typefaces.semibold, 15f)
     private var ignoreClip = false
+    private var tooltipText: String? = null
+    private var tooltipMaxWidth = 260
     private val fill = Paint()
     private val stroke = Paint().apply {
         setStroke(true)
@@ -148,13 +122,12 @@ internal class MenuDraw(
         fill.isAntiAlias = false
         var x = 0
         while (x <= clipRight) {
-            canvas.drawRect(Rect.makeXYWH(x.toFloat(), clipTop.toFloat(), 1f, (clipBottom - clipTop).toFloat()), fill)
+            var y = clipTop
+            while (y <= clipBottom) {
+                canvas.drawRect(Rect.makeXYWH(x.toFloat(), y.toFloat(), 1f, 1f), fill)
+                y += step
+            }
             x += step
-        }
-        var y = clipTop
-        while (y <= clipBottom) {
-            canvas.drawRect(Rect.makeXYWH(0f, y.toFloat(), clipRight.toFloat(), 1f), fill)
-            y += step
         }
     }
 
@@ -180,192 +153,118 @@ internal class MenuDraw(
     fun hovered(x: Int, y: Int, w: Int, h: Int): Boolean =
         visible(y, h) && mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h
 
+    fun circle(x: Float, y: Float, radius: Float, color: Int) {
+        fill.color = color
+        fill.isAntiAlias = true
+        canvas.drawCircle(x, y, radius, fill)
+    }
+
     fun clickable(x: Int, y: Int, w: Int, h: Int, action: () -> Unit) {
         if (w <= 0 || h <= 0) return
         if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
     }
 
-    fun paintConfigChrome(
-        m: ConfigMetrics,
-        tab: ConfigTab,
-        pageIndex: Int,
-        onSelect: (ConfigTab) -> Unit,
-        onSelectPage: (Int) -> Unit,
-        onReload: () -> Unit,
-    ) {
-        round(0, 0, m.screenW, m.screenH, 0f, palette.scrim)
-        unclipped {
-            round(m.panelX, m.panelY, m.panelW, m.panelH, radius.coerceAtMost(2f), palette.window)
-            outline(m.panelX, m.panelY, m.panelW, m.panelH, radius, palette.line)
-            when (chrome.layout) {
-                GuiLayoutId.RAIL -> {
-                    round(m.panelX, m.panelY, m.sidebar, m.panelH, radius, palette.sidebar)
-                    round(m.panelX + m.sidebar - 8, m.panelY, 8, m.panelH, 0f, palette.sidebar)
-                    round(m.panelX, m.panelY, m.panelW, m.header, radius, palette.header)
-                    round(m.panelX, m.panelY + 12, m.panelW, m.header - 12, 0f, palette.header)
-                    round(m.panelX, m.panelY + m.panelH - m.footer, m.panelW, m.footer, radius, palette.header)
-                    round(m.panelX, m.panelY + m.panelH - m.footer, m.panelW, 10, 0f, palette.header)
-                    line(m.panelX + m.sidebar, m.viewTop, 1, palette.line)
-                    brand(m)
-                    val pitch = m.railNavPitch()
-                    val showCaption = pitch >= 42
-                    var navY = m.panelY + m.header + 4
-                    ConfigTab.entries.forEach { item ->
-                        navRail(
-                            item.label(),
-                            item.caption(),
-                            m.panelX + 8,
-                            navY,
-                            m.sidebar - 16,
-                            pitch - 4,
-                            tab == item,
-                            showCaption,
-                        ) {
-                            onSelect(item)
-                        }
-                        navY += pitch
-                    }
-                }
-                GuiLayoutId.RIBBON -> {
-                    round(m.panelX, m.panelY, m.panelW, m.header + m.tabBar, radius, palette.header)
-                    round(m.panelX, m.panelY + 12, m.panelW, m.header + m.tabBar - 12, 0f, palette.header)
-                    round(m.panelX, m.panelY + m.panelH - m.footer, m.panelW, m.footer, radius, palette.header)
-                    round(m.panelX, m.panelY + m.panelH - m.footer, m.panelW, 10, 0f, palette.header)
-                    line(m.panelX, m.viewTop, m.panelW, palette.line)
-                    brand(m)
-                    var tabX = m.panelX + 16
-                    val tabY = m.panelY + m.header
-                    val fullWidth = ConfigTab.entries.sumOf { measure(it.label(), buttonFont) + 22 }
-                    val useShort = fullWidth > m.panelW - 24
-                    ConfigTab.entries.forEach { item ->
-                        val title = if (useShort) item.shortLabel() else item.label()
-                        val w = measure(title, buttonFont) + 18
-                        navTab(title, tabX, tabY, w, m.tabBar, tab == item) { onSelect(item) }
-                        tabX += w + 4
-                    }
-                }
-                GuiLayoutId.COMPACT -> {
-                    round(m.panelX, m.panelY, m.sidebar, m.panelH, radius, palette.sidebar)
-                    round(m.panelX + m.sidebar - 6, m.panelY, 6, m.panelH, 0f, palette.sidebar)
-                    round(m.panelX + m.sidebar, m.panelY, m.panelW - m.sidebar, m.header, 0f, palette.header)
-                    round(m.panelX + m.sidebar, m.panelY + m.panelH - m.footer, m.panelW - m.sidebar, m.footer, 0f, palette.header)
-                    line(m.panelX + m.sidebar, m.panelY, 1, palette.line)
-                    text("icantpy", m.panelX + m.sidebar + 12, m.panelY + 12, palette.text, titleFont)
-                    text(tab.caption(), m.panelX + m.sidebar + 12, m.panelY + 28, palette.secondary, microFont)
-                    val pitch = m.compactNavPitch()
-                    var navY = m.panelY + 8
-                    ConfigTab.entries.forEach { item ->
-                        navIcon(item.shortLabel(), m.panelX + 4, navY, m.sidebar - 8, pitch - 4, tab == item) {
-                            onSelect(item)
-                        }
-                        navY += pitch
-                    }
-                }
-            }
-            paintPageBar(m, tab, pageIndex, onSelectPage)
-            val reloadW = measure("Reload", buttonFont) + 20
-            button("Reload", m.panelX + m.panelW - reloadW - 12, m.panelY + 12, ButtonStyle.GHOST, onReload)
-        }
-    }
 
-    private fun paintPageBar(
-        m: ConfigMetrics,
-        tab: ConfigTab,
-        pageIndex: Int,
-        onSelectPage: (Int) -> Unit,
-    ) {
-        val pages = tab.pages()
-        if (pages.isEmpty() || m.pageBar <= 0) return
-        val x = m.contentLeft
-        val y = m.panelY + m.header + m.tabBar
-        val w = m.panelW - m.sidebar
-        round(x, y, w, m.pageBar, 0f, palette.header)
-        line(x, y + m.pageBar - 1, w, palette.line)
-        var tabX = x + 12
-        pages.forEachIndexed { index, name ->
-            val tabW = measure(name, buttonFont) + 18
-            navTab(name, tabX, y, tabW, m.pageBar, index == pageIndex) { onSelectPage(index) }
-            tabX += tabW + 4
-        }
-    }
 
-    fun navRail(
-        label: String,
-        caption: String,
-        x: Int,
-        y: Int,
-        w: Int,
-        h: Int,
-        selected: Boolean,
-        showCaption: Boolean,
-        action: () -> Unit,
-    ) {
-        val hot = selected || hovered(x, y, w, h)
-        if (selected) {
-            round(x, y, w, h, chrome.controlRadius, palette.accentSoft)
-            round(x, y + 6, 2, h - 12, 0f, palette.accent)
-        } else if (hot) {
-            round(x, y, w, h, chrome.controlRadius, palette.rowHover)
-        }
-        val textY = if (showCaption) y + 6 else y + ((h - lineHeight(bodyFont)) / 2).coerceAtLeast(4)
-        text(label, x + 12, textY, if (selected) palette.accent else palette.text, bodyFont)
-        if (showCaption) {
-            text(caption, x + 12, y + 22, palette.tertiary, microFont)
-        }
-        if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
-    }
+
 
     fun navTab(label: String, x: Int, y: Int, w: Int, h: Int, selected: Boolean, action: () -> Unit) {
-        val hot = selected || hovered(x, y, w, h)
         if (selected) {
-            round(x, y + 4, w, h - 8, chrome.controlRadius, palette.accentSoft)
-            round(x + 8, y + h - 3, w - 16, 2, 0f, palette.accent)
-        } else if (hot) {
-            round(x, y + 4, w, h - 8, chrome.controlRadius, palette.rowHover)
+            round(x + TAB_PADDING, y + h - 3, w - TAB_PADDING * 2, 2, 0f, palette.accent)
+        } else if (hovered(x, y, w, h)) {
+            round(x, y + 4, w, h - 8, chrome.controlRadius, withAlpha(palette.accentSoft, 0x1A))
         }
-        text(label, x + 9, y + 10, if (selected) palette.accent else palette.text, buttonFont)
-        if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
-    }
-
-    fun navIcon(label: String, x: Int, y: Int, w: Int, h: Int, selected: Boolean, action: () -> Unit) {
-        val hot = selected || hovered(x, y, w, h)
-        if (selected) {
-            round(x, y, w, h, 0f, palette.accentSoft)
-            round(x, y + 6, 2, h - 12, 0f, palette.accent)
-        } else if (hot) {
-            round(x, y, w, h, 0f, palette.rowHover)
-        }
-        val tx = x + (w - measure(label, microFont)) / 2
-        val ty = y + ((h - lineHeight(microFont)) / 2).coerceAtLeast(4)
-        text(label, tx.coerceAtLeast(x + 4), ty, if (selected) palette.accent else palette.text, microFont)
+        text(label, x + TAB_PADDING, y + 10, if (selected) palette.accent else palette.text, buttonFont)
         if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
     }
 
     fun button(label: String, x: Int, y: Int, style: ButtonStyle, action: () -> Unit): Int {
-        val w = measure(label, buttonFont) + 20
-        val h = 22
+        val w = measure(label, buttonFont) + 28
+        val h = 28
         val hot = hovered(x, y, w, h)
         val corner = chrome.controlRadius.coerceAtMost(12f)
         when (style) {
             ButtonStyle.PRIMARY -> {
-                round(x, y, w, h, corner, if (hot) palette.knob else palette.accent)
-                text(label, x + 10, y + 4, palette.accentInk, buttonFont)
+                round(x, y, w, h, corner, if (hot) palette.accent else palette.activeAccent)
+                text(label, x + 14, y + 6, palette.accentInk, buttonFont)
             }
             ButtonStyle.GHOST -> {
                 round(x, y, w, h, corner, if (hot) palette.rowHover else palette.group)
                 outline(x, y, w, h, corner, palette.line)
-                text(label, x + 10, y + 4, palette.text, buttonFont)
+                text(label, x + 14, y + 6, palette.text, buttonFont)
             }
             ButtonStyle.DANGER -> {
                 round(x, y, w, h, corner, if (hot) palette.dangerSoft else palette.group)
                 outline(x, y, w, h, corner, palette.danger)
-                text(label, x + 10, y + 4, palette.danger, buttonFont)
+                text(label, x + 14, y + 6, palette.danger, buttonFont)
             }
         }
         if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
         return w
     }
 
+    fun dropdownHeight(optionCount: Int): Int = optionCount * DROPDOWN_ITEM_HEIGHT + 4
+
+    /**
+     * Grouped dropdown that paints a [viewHeight] window onto [lines], starting [scroll] pixels down.
+     * Only lines that fit whole are drawn and hit. Returns the scroll offset used, clamped to the content.
+     */
+    fun dropdownScrollable(
+        x: Int,
+        menuY: Int,
+        width: Int,
+        viewHeight: Int,
+        lines: List<DropdownLine>,
+        selected: Int,
+        scroll: Int,
+        onSelect: (Int) -> Unit,
+    ): Int {
+        val maxScroll = (dropdownLinesHeight(lines) - viewHeight).coerceAtLeast(0)
+        val offset = scroll.coerceIn(0, maxScroll)
+        val radius = chrome.controlRadius.coerceAtMost(12f)
+        val top = menuY + 2
+        val bottom = menuY + viewHeight - 2
+        unclipped {
+            round(x, menuY, width, viewHeight, radius, palette.window)
+            outline(x, menuY, width, viewHeight, radius, palette.accent)
+            var y = top - offset
+            lines.forEach { line ->
+                val h = dropdownLineHeight(line)
+                if (y >= top && y + h <= bottom) {
+                    val option = line.option
+                    if (option == null) {
+                        text(fit(line.label, width - 18, captionFont), x + 9, y + 3, palette.secondary, captionFont)
+                    } else {
+                        val hot = hovered(x + 2, y, width - 4, h)
+                        if (hot || option == selected) {
+                            round(
+                                x + 2,
+                                y,
+                                width - 4,
+                                h,
+                                chrome.controlRadius.coerceAtMost(8f),
+                                if (option == selected) palette.accentSoft else palette.rowHover,
+                            )
+                        }
+                        text(
+                            fit(line.label, width - 18, buttonFont),
+                            x + 9,
+                            y + 4,
+                            if (option == selected) palette.accent else palette.text,
+                            buttonFont,
+                        )
+                        hitRect(x + 2, y, width - 4, h)?.let {
+                            hits += GuiHit(it, action = { onSelect(option) })
+                        }
+                    }
+                }
+                y += h
+            }
+        }
+        return offset
+    }
+
+    /** Dropdown that flips above its anchor when it would pass the bottom of the clip area. */
     fun dropdownMenu(
         x: Int,
         anchorY: Int,
@@ -375,21 +274,34 @@ internal class MenuDraw(
         onSelect: (Int) -> Unit,
     ) {
         if (options.isEmpty()) return
-        val itemHeight = 22
-        val menuHeight = options.size * itemHeight + 4
+        val menuHeight = dropdownHeight(options.size)
         val menuY = if (anchorY + menuHeight <= clipBottom) anchorY else anchorY - menuHeight
+        dropdownMenuAt(x, menuY, width, options, selected, onSelect)
+    }
+
+    /** Paints a dropdown list whose top edge is already placed, without clip limits. */
+    fun dropdownMenuAt(
+        x: Int,
+        menuY: Int,
+        width: Int,
+        options: List<String>,
+        selected: Int,
+        onSelect: (Int) -> Unit,
+    ) {
+        if (options.isEmpty()) return
+        val menuHeight = dropdownHeight(options.size)
         unclipped {
             round(x, menuY, width, menuHeight, chrome.controlRadius.coerceAtMost(12f), palette.window)
             outline(x, menuY, width, menuHeight, chrome.controlRadius.coerceAtMost(12f), palette.accent)
             options.forEachIndexed { index, option ->
-                val itemY = menuY + 2 + index * itemHeight
-                val hot = hovered(x + 2, itemY, width - 4, itemHeight)
+                val itemY = menuY + 2 + index * DROPDOWN_ITEM_HEIGHT
+                val hot = hovered(x + 2, itemY, width - 4, DROPDOWN_ITEM_HEIGHT)
                 if (hot || index == selected) {
                     round(
                         x + 2,
                         itemY,
                         width - 4,
-                        itemHeight,
+                        DROPDOWN_ITEM_HEIGHT,
                         chrome.controlRadius.coerceAtMost(8f),
                         if (index == selected) palette.accentSoft else palette.rowHover,
                     )
@@ -401,42 +313,66 @@ internal class MenuDraw(
                     if (index == selected) palette.accent else palette.text,
                     buttonFont,
                 )
-                hitRect(x + 2, itemY, width - 4, itemHeight)?.let {
+                hitRect(x + 2, itemY, width - 4, DROPDOWN_ITEM_HEIGHT)?.let {
                     hits += GuiHit(it, action = { onSelect(index) })
                 }
             }
         }
     }
 
-    fun toggle(x: Int, y: Int, on: Boolean, action: () -> Unit) {
-        if (chrome.controlRadius < 1f) {
-            val size = 18
-            val hot = hovered(x, y, size, size)
-            outline(x, y, size, size, 0f, when {
-                on -> palette.accent
-                hot -> palette.secondary
-                else -> palette.line
-            })
-            if (on) round(x + 4, y + 4, 10, 10, 0f, palette.accent)
-            if (visible(y, size) && inClipX(x, size)) hitRect(x, y, size, size)?.let { hits += GuiHit(it, action = action) }
-            return
+    /**
+     * Vector chevron centred on ([centerX], [centerY]). [expanded] points down, otherwise right.
+     * Drawn with lines instead of font glyphs so it never renders as a missing-glyph box.
+     */
+    fun chevron(centerX: Int, centerY: Int, size: Int, expanded: Boolean, color: Int) {
+        if (!visible(centerY - size, size * 2)) return
+        chevronPaint.color = color
+        val half = size / 2f
+        val quarter = size / 4f
+        val cx = centerX.toFloat()
+        val cy = centerY.toFloat()
+        if (expanded) {
+            canvas.drawLine(cx - half, cy - quarter, cx, cy + quarter, chevronPaint)
+            canvas.drawLine(cx, cy + quarter, cx + half, cy - quarter, chevronPaint)
+        } else {
+            canvas.drawLine(cx - quarter, cy - half, cx + quarter, cy, chevronPaint)
+            canvas.drawLine(cx + quarter, cy, cx - quarter, cy + half, chevronPaint)
         }
-        val w = 38
-        val h = 20
+    }
+
+    /** Ghost-style dropdown button: [label] on the left and a drawn down-chevron at the right edge. */
+    fun selectButton(label: String, x: Int, y: Int, w: Int, h: Int, action: () -> Unit) {
+        if (w <= 0 || h <= 0) return
         val hot = hovered(x, y, w, h)
-        val corner = chrome.controlRadius.coerceAtMost(12f)
-        round(x, y, w, h, corner, when {
-            on -> palette.accent
-            hot -> palette.trackOff
-            else -> palette.trackOff
-        })
-        val knob = if (on) x + w - 18 else x + 2
-        round(knob, y + 2, 16, 16, corner.coerceAtMost(3f), if (on) palette.accentInk else palette.knob)
+        val corner = chrome.controlRadius.coerceAtMost(8f)
+        round(x, y, w, h, corner, if (hot) palette.rowHover else palette.group)
+        outline(x, y, w, h, corner, if (hot) palette.secondary else palette.line)
+        val chevronCenterX = x + w - SELECT_PAD - SELECT_CHEVRON_SIZE / 2
+        val textX = x + SELECT_PAD
+        val textMax = chevronCenterX - SELECT_CHEVRON_SIZE / 2 - SELECT_PAD - textX
+        val textY = y + (h - lineHeight(buttonFont)) / 2
+        text(fit(label, textMax.coerceAtLeast(20), buttonFont), textX, textY, palette.text, buttonFont)
+        chevron(chevronCenterX, y + h / 2, SELECT_CHEVRON_SIZE, true, palette.tertiary)
         if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
     }
 
-    fun field(id: String, value: String, placeholder: String, x: Int, y: Int, w: Int, focused: Boolean) {
-        val h = 22
+    fun toggle(x: Int, y: Int, on: Boolean, action: () -> Unit) {
+        val w = TOGGLE_WIDTH
+        val h = TOGGLE_HEIGHT
+        val hot = hovered(x, y, w, h)
+        val trackCorner = chrome.controlRadius.coerceAtMost(TOGGLE_MAX_TRACK_RADIUS)
+        if (on) {
+            round(x, y, w, h, trackCorner, palette.activeAccent)
+        } else {
+            round(x, y, w, h, trackCorner, palette.trackOff)
+            outline(x, y, w, h, trackCorner, if (hot) palette.secondary else palette.line)
+        }
+        val knobX = if (on) x + w - TOGGLE_INSET - TOGGLE_KNOB else x + TOGGLE_INSET
+        round(knobX, y + TOGGLE_INSET, TOGGLE_KNOB, TOGGLE_KNOB, TOGGLE_KNOB / 2f, if (on) palette.accentInk else palette.knob)
+        if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
+    }
+
+    fun field(id: String, value: String, placeholder: String, x: Int, y: Int, w: Int, focused: Boolean, h: Int = 28) {
         val hot = focused || hovered(x, y, w, h)
         val corner = chrome.controlRadius.coerceAtMost(8f)
         round(x, y, w, h, corner, palette.field)
@@ -447,8 +383,34 @@ internal class MenuDraw(
             value.isEmpty() -> palette.tertiary
             else -> palette.text
         }
-        text(fit(shown, w - 14, smallFont), x + 8, y + 4, color, smallFont)
+        text(fit(shown, w - 14, smallFont), x + 10, y + (h - FIELD_TEXT_BOX) / 2, color, smallFont)
         if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, fieldId = id) }
+    }
+
+    fun requestTooltip(value: String, maxWidth: Int = 260) {
+        if (value.isNotBlank()) {
+            tooltipText = value
+            tooltipMaxWidth = maxWidth.coerceAtLeast(120)
+        }
+    }
+
+    fun paintTooltip() {
+        val value = tooltipText ?: return
+        val maxWidth = tooltipMaxWidth.coerceAtMost((clipRight - clipLeft - 24).coerceAtLeast(120))
+        val lines = wrap(value, maxWidth, descFont)
+        val textWidth = lines.maxOfOrNull { measure(it, descFont) } ?: return
+        val boxW = (textWidth + 20).coerceAtMost(clipRight - clipLeft - 12)
+        val boxH = lines.size * lineHeight(descFont) + 14
+        val boxX = (mouseX + 12).coerceIn(clipLeft + 6, clipRight - boxW - 6)
+        val belowY = mouseY + 12
+        val boxY = if (belowY + boxH <= clipBottom - 4) belowY else mouseY - boxH - 8
+        unclipped {
+            round(boxX, boxY, boxW, boxH, chrome.controlRadius.coerceAtMost(8f), palette.window)
+            outline(boxX, boxY, boxW, boxH, chrome.controlRadius.coerceAtMost(8f), palette.accent)
+            lines.forEachIndexed { index, line ->
+                text(line, boxX + 10, boxY + 7 + index * lineHeight(descFont), palette.secondary, descFont)
+            }
+        }
     }
 
     fun swatch(x: Int, y: Int, rgb: Int, selected: Boolean, action: () -> Unit) {
@@ -458,13 +420,35 @@ internal class MenuDraw(
         if (visible(y, size) && inClipX(x, size)) hitRect(x, y, size, size)?.let { hits += GuiHit(it, action = action) }
     }
 
+    /**
+     * Horizontal slider [w] wide at [fraction] (0..1). Pressing or dragging anywhere on it calls [onDrag] with the
+     * fraction under the mouse; the knob may hang a little past either end, so the hit area does too.
+     */
+    fun slider(x: Int, y: Int, w: Int, fraction: Float, onDrag: (Float) -> Unit) {
+        val h = 28
+        val f = fraction.coerceIn(0f, 1f)
+        val trackY = y + h / 2 - SLIDER_TRACK / 2
+        val hot = hovered(x - SLIDER_KNOB, y, w + SLIDER_KNOB * 2, h)
+        round(x, trackY, w, SLIDER_TRACK, SLIDER_TRACK / 2f, palette.trackOff)
+        val filled = (w * f).toInt()
+        if (filled > 0) round(x, trackY, filled, SLIDER_TRACK, SLIDER_TRACK / 2f, palette.activeAccent)
+        circle(x + w * f, y + h / 2f, if (hot) SLIDER_KNOB + 1f else SLIDER_KNOB.toFloat(), palette.accent)
+        val hx = x - SLIDER_KNOB
+        val hw = w + SLIDER_KNOB * 2
+        if (visible(y, h) && inClipX(hx, hw)) {
+            hitRect(hx, y, hw, h)?.let { rect ->
+                hits += GuiHit(rect, drag = { mx -> onDrag(((mx - x).toFloat() / w).coerceIn(0f, 1f)) })
+            }
+        }
+    }
+
     fun chip(label: String, x: Int, y: Int, selected: Boolean, action: () -> Unit): Int {
-        val w = measure(label, buttonFont) + 16
-        val h = 22
+        val w = measure(label, buttonFont) + 22
+        val h = 28
         val corner = chrome.controlRadius.coerceAtMost(8f)
         round(x, y, w, h, corner, if (selected) palette.accentSoft else palette.group)
         outline(x, y, w, h, corner, if (selected) palette.accent else palette.line)
-        text(label, x + 8, y + 4, if (selected) palette.accent else palette.text, buttonFont)
+        text(label, x + 11, y + 6, if (selected) palette.accent else palette.text, buttonFont)
         if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
         return w
     }
@@ -493,11 +477,21 @@ internal class MenuDraw(
 
     fun scrollbar(x: Int, y: Int, h: Int, contentH: Int, scroll: Int) {
         if (contentH <= h) return
-        round(x, y, 3, h, 0f, palette.line)
+        round(x, y, SCROLLBAR_WIDTH, h, 1f, palette.line)
         val thumbH = (h.toFloat() * h / contentH).toInt().coerceIn(18, h)
         val max = (contentH - h).coerceAtLeast(1)
         val thumbY = y + ((h - thumbH) * scroll / max)
-        round(x, thumbY, 3, thumbH, 0f, palette.accent)
+        round(x, thumbY, SCROLLBAR_WIDTH, thumbH, 1f, withAlpha(palette.accent, 0x99))
+    }
+
+    /** Soft fade of [color] over the bottom [FADE_HEIGHT] pixels, signalling more content below. */
+    fun fadeBottom(x: Int, bottom: Int, w: Int, color: Int) {
+        val stepH = FADE_HEIGHT / FADE_STEPS
+        val alphaMax = color ushr 24
+        repeat(FADE_STEPS) { step ->
+            val alpha = alphaMax * (step + 1) / FADE_STEPS
+            round(x, bottom - FADE_HEIGHT + step * stepH, w, stepH, 0f, withAlpha(color, alpha))
+        }
     }
 
     fun fit(value: String, maxWidth: Int, font: Font): String {
@@ -509,10 +503,6 @@ internal class MenuDraw(
         return if (text.isEmpty()) "..." else "$text..."
     }
 
-    private fun brand(m: ConfigMetrics) {
-        round(m.panelX + 16, m.panelY + 18, 7, 7, 0f, palette.accent)
-        text("icantpy", m.panelX + 30, m.panelY + 14, palette.text, titleFont)
-    }
 
     private fun hitRect(x: Int, y: Int, w: Int, h: Int): GuiRect? {
         if (ignoreClip) return GuiRect(x, y, w, h)
@@ -526,9 +516,14 @@ internal class MenuDraw(
 
     private fun inClipX(x: Int, w: Int): Boolean = ignoreClip || (x + w > clipLeft && x < clipRight)
 
+    private fun withAlpha(color: Int, alpha: Int): Int = (color and 0x00FFFFFF) or (alpha shl 24)
+
     private fun sized(typeface: org.jetbrains.skia.Typeface, size: Float): Font = Font(typeface, size).apply {
         edging = FontEdging.SUBPIXEL_ANTI_ALIAS
         hinting = FontHinting.SLIGHT
         isSubpixel = true
     }
 }
+
+private const val SLIDER_TRACK = 4
+private const val SLIDER_KNOB = 6

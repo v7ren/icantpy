@@ -80,6 +80,14 @@ class ShardChecklistCodecTest {
         assertEquals("Starborn", starborn.checklist!!.shards.single().name)
         val sunFish = ShardChecklistCodec.parseJson("{\"shards\":[\"Sun Fish\"]}", definitions)
         assertEquals("Sun Fish", sunFish.checklist!!.shards.single().name)
+        val harpy = ShardChecklistCodec.parseJson("{\"shards\":[\"Harpy Shard\", \"Tree Lurker\", \"C24\"]}", definitions)
+        assertEquals(listOf("Harpy"), harpy.checklist!!.shards.map { it.name })
+    }
+
+    @Test fun emptyChecklistIsValid() {
+        val empty = ShardChecklistCodec.parseJson("{\"version\":1,\"name\":\"None\",\"shards\":[]}", catalog)
+        assertEquals("None", empty.checklist!!.name)
+        assertEquals(emptyList(), empty.checklist!!.shards)
     }
 
     @Test fun progressDoesNotInventMissing() {

@@ -1,6 +1,7 @@
 package net.icantpy.qol.stats
 
 import net.icantpy.gui.McUi
+import net.icantpy.qol.auto.AutoActionQueue
 import net.icantpy.dungeon.timer.TickTimers
 import net.icantpy.util.Text
 import net.icantpy.api.IcantpyClientActions
@@ -14,8 +15,12 @@ import org.lwjgl.glfw.GLFW
 object StatsArmor {
     private const val STATS_TITLE = "Stats & Equipment"
     private const val ARM_WINDOW_MS = 4_000L
+    private const val SUPPRESS_AFTER_RUN_MS = 2_000L
     private val mc: Minecraft get() = Minecraft.getInstance()
     private var armedUntil: Long = 0L
+
+    /** Until this time a Stats menu is never taken over, so a menu re-sent after an auto run stays vanilla. */
+    private var suppressInterceptUntil: Long = 0L
     private var resolutionMenu: AbstractContainerMenu? = null
     private var cachedSourceSlots: List<Slot> = emptyList()
     private val resolutionCache = mutableMapOf<String, Slot?>()
@@ -44,8 +49,17 @@ object StatsArmor {
         invalidateResolutionCache()
     }
 
-    fun wantsMenu(title: String): Boolean =
-        isStatsTitle(title) && (armedUntil > System.currentTimeMillis() || StatsArmorScreen.instance != null)
+    fun wantsMenu(title: String): Boolean {
+        val now = System.currentTimeMillis()
+        return isStatsTitle(title) && !AutoActionQueue.isMenuRunActive() && now >= suppressInterceptUntil &&
+            (armedUntil > now || StatsArmorScreen.instance != null)
+    }
+
+    /** Called when an auto stats run has finished its post-click window; see LoadoutAutoRun for the rationale. */
+    fun onAutoRunFinished(nowMs: Long) {
+        armedUntil = 0L
+        suppressInterceptUntil = nowMs + SUPPRESS_AFTER_RUN_MS
+    }
 
     fun openMenu(menu: AbstractContainerMenu, title: Component): Boolean {
         if (!wantsMenu(title.string)) return false
@@ -109,6 +123,13 @@ object StatsArmor {
     }
 
     fun currentArmor(slot: StatsArmorSlot) = mc.player?.getItemBySlot(slot.equipmentSlot)
+
+    /** Dropdown and trigger label for a saved preset, for example "Helmet: Aurora Helmet". */
+    fun presetLabel(preset: ArmorPreset): String = "${preset.armorSlot.label}: ${preset.itemName}"
+
+    /** Labels for every saved stats preset, keyed by preset id, for trigger text. */
+    fun presetLabels(): Map<String, String> =
+        TickTimers.settings.statsArmor.presets().associate { it.id to presetLabel(it) }
 
     fun isStatsTitle(title: String): Boolean = Text.strip(title).trim().equals(STATS_TITLE, ignoreCase = true)
 

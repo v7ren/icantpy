@@ -82,6 +82,8 @@ data class LeapOrientSettings(
     val ee2Class: LeapDungeonClass = LeapDungeonClass.MAGE,
     val classPlayers: Map<String, String> = emptyMap(),
     val disabledPresetIds: Set<String> = emptySet(),
+    /** Presets the user deleted. Regeneration skips these until [resetPreset] restores them. */
+    val deletedPresetIds: Set<String> = emptySet(),
     val priorities: List<LeapPriorityRule> = DEFAULT_PRIORITIES,
     val triggers: List<LeapOrientTrigger> = DEFAULT_TRIGGERS,
 ) {
@@ -152,6 +154,13 @@ data class LeapOrientSettings(
         }
         return copy(triggers = triggers.filterNot { it.id == id })
     }
+
+    /** Removes preset rows for [ids] and remembers them so they are not regenerated. */
+    fun deletePresets(ids: Set<String>): LeapOrientSettings = copy(
+        triggers = triggers.filterNot { it.isPreset && it.id in ids },
+        deletedPresetIds = deletedPresetIds + ids,
+        disabledPresetIds = disabledPresetIds - ids,
+    )
 
     fun applyPreset(): LeapOrientSettings = LeapRoutePreset.apply(this)
 
@@ -279,6 +288,7 @@ data class LeapOrientSettings(
                     ?: LeapDungeonClass.MAGE,
                 classPlayers = LeapTriggerJson.stringMap(obj, "classPlayers"),
                 disabledPresetIds = LeapTriggerJson.stringsFromJson(obj, "disabledPresetIds").toSet(),
+                deletedPresetIds = LeapTriggerJson.stringsFromJson(obj, "deletedPresetIds").toSet(),
                 priorities = LeapTriggerJson.prioritiesFromJson(obj) ?: defaults.priorities,
                 triggers = LeapTriggerJson.triggersFromJson(obj) ?: defaults.triggers,
             )
@@ -330,6 +340,7 @@ data class LeapOrientSettings(
             obj.addProperty("ee2Class", settings.ee2Class.name)
             obj.add("classPlayers", LeapTriggerJson.stringMapToJson(settings.classPlayers))
             obj.add("disabledPresetIds", LeapTriggerJson.stringsToJson(settings.disabledPresetIds.toList()))
+            obj.add("deletedPresetIds", LeapTriggerJson.stringsToJson(settings.deletedPresetIds.toList()))
             obj.add("priorities", LeapTriggerJson.prioritiesToJson(settings.priorities))
             obj.add("triggers", LeapTriggerJson.triggersToJson(settings.triggers))
             return obj

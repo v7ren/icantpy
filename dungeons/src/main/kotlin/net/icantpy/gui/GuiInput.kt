@@ -47,6 +47,8 @@ internal data class GuiHit(
     val rect: GuiRect,
     val fieldId: String? = null,
     val action: (() -> Unit)? = null,
+    /** Called with the mouse x on press and on every drag until release (sliders). */
+    val drag: ((Int) -> Unit)? = null,
 )
 
 internal fun clampScroll(scroll: Int, contentHeight: Int, viewHeight: Int): Int {

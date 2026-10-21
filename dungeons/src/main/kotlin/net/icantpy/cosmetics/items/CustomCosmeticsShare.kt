@@ -11,6 +11,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -24,7 +25,7 @@ object CustomCosmeticsShare {
     private val remote = ConcurrentHashMap<String, SharedCosmetics>()
     private val generation = AtomicLong(0)
     private val busy = AtomicBoolean(false)
-    private var executor = newExecutor()
+    private var executor: ExecutorService? = null
     private var lastFingerprint: String? = null
     private var lastPublishAt = 0L
     private var lastPollAt = 0L
@@ -43,6 +44,9 @@ object CustomCosmeticsShare {
         val key = CustomCosmeticsCodec.normalizeUuid(playerUuid) ?: return null
         return remote[key]?.appearanceFor(skyblockId, displayName)
     }
+
+    /** True when any remote player's shared cosmetics are cached; cheap check for render-path gating. */
+    fun hasRemoteAppearances(): Boolean = remote.isNotEmpty()
 
     fun morphEntityId(playerUuid: java.util.UUID): String? {
         val key = CustomCosmeticsCodec.normalizeUuid(playerUuid.toString()) ?: return null
@@ -77,8 +81,8 @@ object CustomCosmeticsShare {
 
     fun onUnload() {
         generation.incrementAndGet()
-        executor.shutdownNow()
-        executor = newExecutor()
+        executor?.shutdownNow()
+        executor = null
         remote.clear()
         lastFingerprint = null
         lastPolled = emptySet()
@@ -91,7 +95,9 @@ object CustomCosmeticsShare {
     private fun localSnapshot(): SharedCosmetics? {
         val player = Minecraft.getInstance().player ?: return null
         val slots = linkedMapOf<String, SharedCosmeticSlot>()
-        for (slot in publishSlots) {
+        // Item Customize off: publish no slots, so peers drop our custom items.
+        val publishedSlots = if (CustomRename.enabled()) publishSlots else emptyList()
+        for (slot in publishedSlots) {
             val stack = player.getItemBySlot(slot)
             val skyblockId = HypixelItemData.skyblockId(stack)
             val displayName = HypixelItemData.matchName(stack)
@@ -105,7 +111,7 @@ object CustomCosmeticsShare {
             playerName = player.gameProfile.name,
             updatedAt = System.currentTimeMillis(),
             slots = slots,
-            morphEntityId = PlayerDisguise.entityId(),
+            morphEntityId = PlayerDisguise.activeEntityId(),
         )
     }
 
@@ -171,7 +177,7 @@ object CustomCosmeticsShare {
 
     private fun submit(token: Long, work: () -> Unit) {
         if (!busy.compareAndSet(false, true)) return
-        executor.execute {
+        executor().execute {
             try {
                 if (generation.get() == token) work()
             } catch (exception: Exception) {
@@ -188,7 +194,10 @@ object CustomCosmeticsShare {
         return listOf(publicBase, LOCAL_BASE).distinct()
     }
 
-    private fun newExecutor() = Executors.newSingleThreadExecutor { runnable ->
+    private fun executor(): ExecutorService =
+        executor ?: newExecutor().also { executor = it }
+
+    private fun newExecutor(): ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "icantpy-cosmetics").apply { isDaemon = true }
     }
 

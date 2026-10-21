@@ -11,8 +11,13 @@ data class ShardDefinition(
     val costs: List<Int> = emptyList(),
     val internalName: String = "",
     val bazaarName: String = "SHARD_${displayName.uppercase().replace(' ', '_')}",
-    val aliases: List<String> = emptyList()
-)
+    val aliases: List<String> = emptyList(),
+    val shardId: String = "",
+) {
+    val shardLabel: String get() =
+        if (displayName.endsWith(" Shard", ignoreCase = true)) displayName else "$displayName Shard"
+    val attributeLabel: String get() = abilityName.ifBlank { displayName }
+}
 
 data class ShardChecklistEntry(val name: String, val targetLevel: Int = 10)
 

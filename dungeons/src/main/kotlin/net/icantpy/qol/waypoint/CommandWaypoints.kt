@@ -20,15 +20,20 @@ object CommandWaypoints {
     private val cooldown = HashMap<String, Int>()
     private var tickCount: Int = 0
 
+    /** World resolved once per client tick; render reuses it so frames do not rescan the sidebar. */
+    private var tickWorld: WaypointWorld? = null
+
     fun tick() {
         tickCount += 1
         val settings = TickTimers.settings
         if (!settings.waypointsEnabled) {
             inside.clear()
+            tickWorld = null
             return
         }
-        val player = Minecraft.getInstance().player ?: return
         val world = SkyblockWorlds.current()
+        tickWorld = world
+        val player = Minecraft.getInstance().player ?: return
         val occupied = HashSet<String>()
         for (waypoint in settings.waypoints) {
             if (!waypoint.enabled) continue
@@ -50,7 +55,7 @@ object CommandWaypoints {
     fun render() {
         val settings = TickTimers.settings
         if (!settings.waypointsEnabled || !settings.showWaypoints) return
-        val world = SkyblockWorlds.current()
+        val world = tickWorld ?: return
         for (waypoint in settings.waypoints) {
             if (!waypoint.enabled) continue
             if (!waypoint.inWorld(world)) continue

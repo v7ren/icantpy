@@ -3,6 +3,9 @@ package net.icantpy.dungeon.leap
 import net.icantpy.dungeon.timer.TimerClock
 
 object LeapRoutePreset {
+    /** Every built-in route row arms its leap and queues no other actions. */
+    private val PRESET_STEPS: List<LeapAutoStep> = listOf(LeapAutoStep.leapTarget())
+
     private val legacyP5PresetIds = mapOf(
         "heal-p5-relic-bers" to "heal-p5-purple-bers",
         "mage-p5-relic-bers" to "mage-p5-blue-bers",
@@ -47,7 +50,7 @@ object LeapRoutePreset {
         val generated = rows(route, ee2).map { row ->
             val id = row.presetId ?: row.id
             row.copy(id = id, enabled = id !in current.disabledPresetIds)
-        }
+        }.filter { replace || it.id !in current.deletedPresetIds }
         val savedById = current.triggers.associateBy { it.id }
         val generatedIds = generated.map { it.id }.toSet()
         val mergedGenerated = generated.map { row ->
@@ -71,6 +74,7 @@ object LeapRoutePreset {
             stormRoute = if (route == LeapStormRoute.ANY) current.stormRoute else route,
             ee2Class = if (ee2.isReal()) ee2 else current.ee2Class,
             triggers = mergedGenerated + hiddenPresets + custom,
+            deletedPresetIds = if (replace) emptySet() else current.deletedPresetIds,
         )
     }
 
@@ -78,12 +82,15 @@ object LeapRoutePreset {
     fun migrate(current: LeapOrientSettings): LeapOrientSettings {
         val generated = rows(current.stormRoute, current.ee2Class)
         val existing = current.triggers.associateBy { it.id }
-        val merged = generated.map { preset ->
+        val merged = generated.mapNotNull { preset ->
             val legacyId = legacyP5PresetIds[preset.id]
             val saved = existing[preset.id] ?: legacyId?.let(existing::get)
             val disabled = preset.id in current.disabledPresetIds ||
                 legacyId?.let { it in current.disabledPresetIds } == true
+            val deleted = preset.id in current.deletedPresetIds ||
+                legacyId?.let { it in current.deletedPresetIds } == true
             when {
+                deleted -> null
                 saved == null -> preset.copy(enabled = !disabled)
                 legacyId != null && saved.id == legacyId -> preset.copy(enabled = saved.enabled && !disabled)
                 saved.event == LeapTriggerEvent.BOSS_P5 && preset.event == LeapTriggerEvent.RELIC_PICKUP ->
@@ -112,7 +119,7 @@ object LeapRoutePreset {
                 reason = "Maxor died",
                 group = "P1",
                 route = LeapStormRoute.ANY,
-                event = LeapTriggerEvent.BOSS_STORM_START,
+                event = LeapTriggerEvent.MAXOR_DEATH,
             ),
             boss(
                 id = "mage-maxor-bers",
@@ -122,7 +129,7 @@ object LeapRoutePreset {
                 reason = "Maxor died",
                 group = "P1",
                 route = LeapStormRoute.ANY,
-                event = LeapTriggerEvent.BOSS_STORM_START,
+                event = LeapTriggerEvent.MAXOR_DEATH,
             ),
             boss(
                 id = "tank-maxor-bers",
@@ -132,7 +139,7 @@ object LeapRoutePreset {
                 reason = "Maxor died",
                 group = "P1",
                 route = LeapStormRoute.ANY,
-                event = LeapTriggerEvent.BOSS_STORM_START,
+                event = LeapTriggerEvent.MAXOR_DEATH,
             ),
             boss(
                 id = "heal-predev",
@@ -142,7 +149,7 @@ object LeapRoutePreset {
                 reason = if (route == LeapStormRoute.GY) "GY predev" else "PY predev",
                 group = "P1",
                 route = route,
-                event = LeapTriggerEvent.BOSS_STORM_START,
+                event = LeapTriggerEvent.MAXOR_DEATH,
             ),
         )
     }
@@ -348,6 +355,7 @@ object LeapRoutePreset {
         reason = reason,
         presetId = id,
         group = group,
+        steps = PRESET_STEPS,
     )
 
     private fun clock(
@@ -379,6 +387,7 @@ object LeapRoutePreset {
         reason = reason,
         presetId = id,
         group = group,
+        steps = PRESET_STEPS,
     )
 
     private fun chain(
@@ -409,6 +418,7 @@ object LeapRoutePreset {
         reason = reason,
         presetId = id,
         group = group,
+        steps = PRESET_STEPS,
     )
 
     private fun leaped(
@@ -434,5 +444,6 @@ object LeapRoutePreset {
         reason = reason,
         presetId = id,
         group = group,
+        steps = PRESET_STEPS,
     )
 }

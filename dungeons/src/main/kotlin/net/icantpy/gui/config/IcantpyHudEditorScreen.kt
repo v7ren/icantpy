@@ -63,7 +63,7 @@ class IcantpyHudEditorScreen(
         surface.paint(graphics) { canvas ->
             val draw = MenuDraw(canvas, 0, height, 0, width, mouseX, mouseY, chrome)
             draw.round(0, 0, width, height, 0f, draw.palette.scrim)
-            draw.grid(20, 0xFF18181B.toInt())
+            draw.grid(20, 0xFF20252E.toInt())
             IcantpyHud.drawSkiaPieces(canvas, pieces)
             pieces.forEach { piece ->
                 if (piece.id != selected) return@forEach

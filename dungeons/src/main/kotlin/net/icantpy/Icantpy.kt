@@ -1,5 +1,6 @@
 package net.icantpy
 
+import net.icantpy.api.AppearanceOwnerHook
 import net.icantpy.api.IcantpyBridge
 import net.icantpy.api.IcantpyClientCommands
 import net.icantpy.api.IcantpyCommandPrefix
@@ -16,6 +17,12 @@ import net.icantpy.cosmetics.items.CustomCosmeticsShare
 import net.icantpy.cosmetics.items.CustomRename
 import net.icantpy.cosmetics.items.CustomRenameEditorSession
 import net.icantpy.qol.camera.Freelook
+import net.icantpy.qol.visual.Visuals
+import net.icantpy.qol.perf.Culling
+import net.icantpy.qol.perf.FrameGen
+import net.icantpy.qol.perf.MotionBlur
+import net.icantpy.qol.perf.PerfHud
+import net.icantpy.qol.perf.PerformancePreset
 import net.icantpy.cosmetics.items.ItemCustomizeClock
 import net.icantpy.cosmetics.items.ItemInfo
 import net.icantpy.cosmetics.items.RenameVisuals
@@ -24,17 +31,30 @@ import net.icantpy.cosmetics.morph.MorphCrosshair
 import net.icantpy.cosmetics.morph.PlayerDisguise
 import net.icantpy.dungeon.DropUltimate
 import net.icantpy.dungeon.DungeonListener
+import net.icantpy.dungeon.dragons.DragonController
+import net.icantpy.dungeon.leap.LeapDungeonClass
 import net.icantpy.dungeon.leap.LeapMenu
+import net.icantpy.dungeon.leap.LeapRoster
 import net.icantpy.dungeon.leap.LeapOrient
+import net.icantpy.location.SkyblockLocation
 import net.icantpy.hud.IcantpyHud
 import net.icantpy.hud.WorldEsp
 import net.icantpy.slayer.SlayerCarryCounter
+import net.icantpy.slayer.blaze.FirePit
+import net.icantpy.slayer.blaze.QuaziiBeamDodge
+import net.icantpy.slayer.aim.BossAim
+import net.icantpy.slayer.aim.BossStrafe
+import net.icantpy.qol.path.Navigator
 import net.icantpy.qol.stats.MaskTimers
 import net.icantpy.qol.stats.StatsArmor
 import net.icantpy.qol.loadout.Loadout
 import net.icantpy.dungeon.timer.TickTimers
 import net.icantpy.qol.waypoint.CommandWaypoints
 import net.icantpy.qol.shards.ShardChecklistController
+import net.icantpy.qol.invsort.InvSortController
+import net.icantpy.dungeon.timer.AlertSounds
+import net.icantpy.dungeon.score.ScoreTracker
+import net.icantpy.dungeon.splits.RunSplitsController
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
@@ -53,12 +73,11 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.level.block.state.BlockState
-import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 object Icantpy : ClientModInitializer, IcantpyPayload {
     const val MOD_ID: String = "icantpy"
-    val LOGGER: Logger = LoggerFactory.getLogger(MOD_ID)
+    val LOGGER: IcantpyLog = IcantpyLog(LoggerFactory.getLogger(MOD_ID))
     private val CONFIG_BODIES = setOf("", "gui")
 
     override fun onInitializeClient() {
@@ -66,17 +85,31 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             LOGGER.info("icantpy loader present; skipping standalone Fabric init")
             return
         }
+        net.icantpy.proxy.ProxyClient.init()
         startStandalone()
     }
 
     override fun onLoad() {
         ShardChecklistController.load()
+        InvSortController.load()
         Composite.init(MOD_ID)
         TickTimers.load()
         LeapOrient.load()
+        net.icantpy.hud.markers.PlayerMarkers.classResolver = { token -> LeapRoster.nameForMarkerClass(token) }
+        loadDragons()
         CustomRename.load()
         Freelook.load()
+        MotionBlur.load()
+        PerformancePreset.load()
+        Culling.load()
+        Visuals.load()
+        FirePit.load()
+        FrameGen.load()
+        PerfHud.load()
         PlayerDisguise.load()
+        ScoreTracker.load()
+        BossAim.load()
+        Navigator.load()
         CommandWaypoints.reset()
         CustomRenameEditorSession.close()
         ItemCustomizeClock.reset()
@@ -84,23 +117,44 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
     }
 
     override fun onUnload() {
+        AppearanceOwnerHook.wanted = true
+        net.icantpy.hud.markers.PlayerMarkerRenderer.releaseGlow()
+        net.icantpy.hud.markers.PlayerMarkers.clearAll()
         ShardChecklistController.onUnload()
         IcantpyGui.closeIfOpen()
         CustomRenameEditorSession.close()
         CustomCosmeticsShare.onUnload()
+        AlertSounds.onUnload()
+        InvSortController.onUnload()
         CustomRename.clearTransientCache()
         Freelook.onUnload()
+        MotionBlur.unload()
+        FrameGen.unload()
+        PerfHud.unload()
+        Culling.unload()
+        Visuals.unload()
+        FirePit.unload()
+        QuaziiBeamDodge.reset()
+        BossStrafe.reset()
+        BossAim.unload()
+        Navigator.unload()
         PlayerDisguise.onUnload()
         ItemCustomizeClock.reset()
         DungeonListener.reset()
         DropUltimate.reset()
         SlayerCarryCounter.reset()
+        DragonController.onUnload()
+        net.icantpy.hud.markers.PlayerMarkers.clearAll()
         LeapOrient.onDisconnect()
+        RunSplitsController.onUnload()
+        ScoreTracker.onDisconnect()
         LOGGER.info("icantpy payload unloaded")
+        IcantpyLogFile.close()
     }
 
     override fun onOutgoingChat(message: String): Boolean {
         ShardChecklistController.handleCommand(message)?.let { return true }
+        InvSortController.handleCommand(message)?.let { return true }
         if (CustomRename.isEditorCommand(message)) {
             IcantpyGui.showItemCustomize()
             return true
@@ -125,6 +179,10 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             CommandWaypoints.tell(reply)
             return true
         }
+        SkyblockLocation.handleCommand(message)?.let { reply ->
+            tell(reply)
+            return true
+        }
         LeapOrient.handleCommand(message)?.let { reply ->
             if (reply.isNotEmpty()) tell(reply)
             return true
@@ -134,6 +192,10 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             return true
         }
         SlayerCarryCounter.handleCommand(message)?.let { reply ->
+            if (reply.isNotEmpty()) tell(reply)
+            return true
+        }
+        Navigator.handleCommand(message)?.let { reply ->
             if (reply.isNotEmpty()) tell(reply)
             return true
         }
@@ -170,7 +232,10 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         ShardChecklistController.onIncomingChat(message)
         TickTimers.onChat(message)
         LeapOrient.onIncomingChat(message)
+        DragonController.onChat(message)
         MaskTimers.onChat(message)
+        QuaziiBeamDodge.onChat(message)
+        Loadout.onChat(message)
     }
 
     override fun onBlock(pos: BlockPos, state: BlockState) {
@@ -183,42 +248,67 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
     }
 
     override fun onRenderWorld() {
+        PerfHud.onFrameStart()
+        MotionBlur.onFrameStart()
+        Culling.onFrameStart()
+        Visuals.onFrameStart()
+        BossAim.onFrameStart()
+        Navigator.onFrameStart()
+        AppearanceOwnerScope.syncWanted()
         WorldEsp.render()
     }
 
     override fun onRenderHud(graphics: GuiGraphicsExtractor) {
         IcantpyHud.render(graphics)
+        PerfHud.render(graphics)
     }
 
     override fun onTick() {
+        IcantpyLogFile.flush()
         ShardChecklistController.tick()
+        InvSortController.tick()
         IcantpyGui.tick()
         StatsArmor.tick()
         Loadout.tick()
         DungeonListener.tick()
         TickTimers.onClientTick()
+        DragonController.tick(Minecraft.getInstance())
         LeapOrient.onTick()
+        RunSplitsController.tick()
+        ScoreTracker.tick()
         CommandWaypoints.tick()
         CustomCosmeticsShare.tick()
         HeadTextures.tick()
         Freelook.tick()
+        Visuals.tick()
+        FirePit.tick()
+        BossAim.tick()
+        BossStrafe.tick()
+        Navigator.tick()
         DropUltimate.tick()
         SlayerCarryCounter.tick()
     }
 
     override fun onServerTick() {
+        DragonController.onServerTick()
         MaskTimers.onServerTick()
         if (DungeonListener.state.inBoss) LeapOrient.bossTracker.onServerTick()
         TickTimers.onServerTick()
     }
 
     override fun onDisconnect() {
+        DragonController.onDisconnect()
+        net.icantpy.hud.markers.PlayerMarkers.clearAll()
         ShardChecklistController.onDisconnect()
+        InvSortController.onDisconnect()
+        IcantpyGui.clearPending()
         TickTimers.reset(force = true)
         DungeonListener.reset()
         DropUltimate.reset()
         SlayerCarryCounter.reset()
         LeapOrient.onDisconnect()
+        RunSplitsController.onDisconnect()
+        ScoreTracker.onDisconnect()
         CommandWaypoints.reset()
         StatsArmor.onDisconnect()
         Loadout.onDisconnect()
@@ -278,24 +368,35 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
     }
 
     override fun dispatch(event: IcantpyRuntimeEvent): IcantpyDispatchResult {
-        if (event.id == "lifecycle.start_tick") {
-            Freelook.tick()
-            return IcantpyDispatchResult.PASS
-        }
+        // Hot path: fires twice per entity per frame, so it is checked before the lifecycle/dragon ids.
         if (event.id == "render.appearance.owner") {
             AppearanceOwnerScope.handle(event)
             return IcantpyDispatchResult.HANDLED
         }
+        if (event.id == "lifecycle.start_tick") {
+            Freelook.tick()
+            QuaziiBeamDodge.startTick()
+            return IcantpyDispatchResult.PASS
+        }
+        if (event.id == DRAGON_FLAME_EVENT) forwardDragonFlame(event.context)
         return super.dispatch(event)
     }
 
     override fun query(query: IcantpyRuntimeQuery): IcantpyQueryResult {
         if (query.id == "input.attack.start" || query.id == "input.attack.pre") {
+            BossStrafe.onAttack()
             val clickCount = (query.context["clickCount"] as? Number)?.toInt() ?: 1
             if (clickCount > 0 && net.icantpy.dungeon.leap.LeapAutoLeapController.onAttack()) {
                 // pre-attack expects true to cancel; startAttack expects false (no attack).
                 return IcantpyQueryResult(IcantpyDispatchResult.HANDLED, query.id == "input.attack.pre")
             }
+        }
+        if (query.id == "render.entity.glow") {
+            val entityId = (query.context["entityId"] as? Number)?.toInt()
+                ?: return IcantpyQueryResult(IcantpyDispatchResult.PASS)
+            val color = net.icantpy.hud.markers.PlayerMarkers.glowColorFor(entityId)
+                ?: return IcantpyQueryResult(IcantpyDispatchResult.PASS)
+            return IcantpyQueryResult(IcantpyDispatchResult.HANDLED, color)
         }
         if (query.id == "input.keyboard.key") {
             val event = query.context["event"] as? KeyEvent
@@ -366,17 +467,29 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         return LeapMenu.renderOverlay(chest, graphics, mouseX, mouseY, partialTick)
     }
 
+    // Container HEAD hooks run before vanilla handling. The auto-run input lock is applied first so it
+    // holds for every container, including the ones an auto run opens; a non-null result cancels vanilla.
     override fun leapMouseClicked(screen: Screen, event: MouseButtonEvent, doubleClick: Boolean): Boolean? {
+        net.icantpy.qol.auto.AutoInputGate.mixinVerdict(net.icantpy.qol.auto.AutoInputEvent.MOUSE_PRESS, event)
+            ?.let { return it }
         val chest = screen as? AbstractContainerScreen<*> ?: return null
         return LeapMenu.mouseClicked(chest, event, doubleClick)
     }
 
     override fun leapMouseReleased(screen: Screen, event: MouseButtonEvent): Boolean? {
+        net.icantpy.qol.auto.AutoInputGate.mixinVerdict(net.icantpy.qol.auto.AutoInputEvent.OTHER, event)
+            ?.let { return it }
         val chest = screen as? AbstractContainerScreen<*> ?: return null
         return LeapMenu.mouseReleased(chest, event)
     }
 
     override fun leapKeyPressed(screen: Screen, event: KeyEvent): Boolean? {
+        val kind = if (event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+            net.icantpy.qol.auto.AutoInputEvent.ESCAPE
+        } else {
+            net.icantpy.qol.auto.AutoInputEvent.OTHER
+        }
+        net.icantpy.qol.auto.AutoInputGate.mixinVerdict(kind, event)?.let { return it }
         val chest = screen as? AbstractContainerScreen<*> ?: return null
         return LeapMenu.keyPressed(chest, event)
     }
@@ -402,40 +515,94 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         Minecraft.getInstance().player?.sendSystemMessage(Component.literal(text))
     }
 
+    private const val DRAGON_FLAME_EVENT = "world.particle.flame"
+
+    /** Passes the tracker the dragon spawn particle fields. Missing or mistyped fields are dropped. */
+    private fun forwardDragonFlame(context: Map<String, Any?>) {
+        val x = context["x"] as? Double ?: return
+        val y = context["y"] as? Double ?: return
+        val z = context["z"] as? Double ?: return
+        val count = (context["count"] as? Number)?.toInt() ?: return
+        val xDist = (context["xDist"] as? Number)?.toFloat() ?: return
+        val yDist = (context["yDist"] as? Number)?.toFloat() ?: return
+        val zDist = (context["zDist"] as? Number)?.toFloat() ?: return
+        val maxSpeed = (context["maxSpeed"] as? Number)?.toFloat() ?: return
+        DragonController.onParticleEvent("flame", x, y, z, count, xDist, yDist, zDist, maxSpeed)
+    }
+
+    /** Binds live player state for spawn priority. Power and time blessing levels are not tracked yet, so they read as 0 and off. */
+    private fun loadDragons() {
+        DragonController.load(FabricLoader.getInstance().configDir.resolve("icantpy-dragons.json"))
+        DragonController.bindPriorityInputs(
+            playerClass = { LeapRoster.selfClass(LeapOrient.settings()).takeIf { it.isReal() }?.name },
+            powerBlessing = { 0 },
+            timeBlessing = { false },
+        )
+    }
+
     private fun startStandalone() {
         Composite.init(MOD_ID)
         ShardChecklistController.load()
+        InvSortController.load()
         IcantpyBridge.setPayload(this)
         IcantpyGui.register()
         TickTimers.load()
         LeapOrient.load()
+        loadDragons()
         CustomRename.load()
         Freelook.load()
+        MotionBlur.load()
+        PerformancePreset.load()
+        Culling.load()
+        Visuals.load()
+        FirePit.load()
+        FrameGen.load()
+        PerfHud.load()
         PlayerDisguise.load()
+        ScoreTracker.load()
+        BossAim.load()
+        Navigator.load()
         ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
             dispatcher.register(IcantpyClientCommands.tree("icantpy"))
             dispatcher.register(IcantpyClientCommands.tree("crypt"))
         }
         HudElementRegistry.addLast(id("tick-timers")) { graphics, _ ->
             IcantpyHud.render(graphics)
+            PerfHud.render(graphics)
         }
+        ClientTickEvents.START_CLIENT_TICK.register { QuaziiBeamDodge.startTick() }
         ClientTickEvents.END_CLIENT_TICK.register {
+            IcantpyLogFile.flush()
             ShardChecklistController.tick()
+            InvSortController.tick()
             IcantpyGui.tick()
             StatsArmor.tick()
             Loadout.tick()
             DungeonListener.tick()
             TickTimers.onClientTick()
+            DragonController.tick(Minecraft.getInstance())
             LeapOrient.onTick()
+            RunSplitsController.tick()
+            ScoreTracker.tick()
             CommandWaypoints.tick()
             CustomCosmeticsShare.tick()
             HeadTextures.tick()
             Freelook.tick()
+            Visuals.tick()
+            FirePit.tick()
+            BossAim.tick()
+            BossStrafe.tick()
+            Navigator.tick()
             DropUltimate.tick()
             SlayerCarryCounter.tick()
         }
         ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
             ShardChecklistController.onDisconnect()
+            InvSortController.onDisconnect()
+            IcantpyGui.clearPending()
+            RunSplitsController.onDisconnect()
+            DragonController.onDisconnect()
+            ScoreTracker.onDisconnect()
             IcantpyBridge.onDisconnect()
         }
         LOGGER.info("icantpy loaded as a normal Fabric mod")

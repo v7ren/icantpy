@@ -33,7 +33,20 @@ object IcantpyPayloadUpdater {
         .build()
 
     const val LOCAL_UPDATE_BASE: String = "http://127.0.0.1:8964/icantpy"
-    const val DOWNLOAD_CHUNK_BYTES: Long = 32L * 1024 * 1024
+    /**
+     * Payloads download in ranges this size. Large single responses through the public Cloudflare tunnel get cut
+     * off or answered with 502/530, while small ranges get through, so every range is small and retried on its own.
+     */
+    const val DOWNLOAD_CHUNK_BYTES: Long = 4L * 1024 * 1024
+
+    /** Tries per range before the whole download from that URL is given up (about a minute of back-off). */
+    const val CHUNK_ATTEMPTS: Int = 10
+
+    /**
+     * Pause between two ranges from a remote server. Back-to-back ranges make the tunnel drop requests for seconds at
+     * a time; with this pause a 91 MB payload came through in about 23 s with no retries.
+     */
+    const val CHUNK_PAUSE_MS: Long = 250L
     val HOST_ABI: String = IcantpyRuntimeContract.ABI
     val HOST_CAPABILITIES: Set<String> = IcantpyRuntimeContract.CAPABILITIES
 
@@ -48,6 +61,45 @@ object IcantpyPayloadUpdater {
             offset = end + 1
         }
         return windows
+    }
+
+    /**
+     * Runs [block] up to [attempts] times, sleeping [delayMs] of the failed attempt number between tries, and
+     * rethrows the last failure. An interrupt is never retried.
+     */
+    fun <T> withRetries(
+        attempts: Int,
+        delayMs: (Int) -> Long = ::retryDelayMs,
+        sleep: (Long) -> Unit = Thread::sleep,
+        onRetry: (Int, Exception) -> Unit = { _, _ -> },
+        block: (Int) -> T,
+    ): T {
+        require(attempts > 0) { "attempts must be positive" }
+        var last: Exception? = null
+        for (attempt in 1..attempts) {
+            try {
+                return block(attempt)
+            } catch (error: InterruptedException) {
+                throw error
+            } catch (error: Exception) {
+                last = error
+                if (attempt < attempts) {
+                    onRetry(attempt, error)
+                    sleep(delayMs(attempt))
+                }
+            }
+        }
+        throw last!!
+    }
+
+    /** Back-off after failed attempt [attempt]: 0.5 s, 2 s, 4.5 s, then 8 s. */
+    fun retryDelayMs(attempt: Int): Long = min(500L * attempt * attempt, 8_000L)
+
+    /** Start offset from a Content-Range header such as "bytes 0-4194303/91364768", or null. */
+    fun parseContentRangeStart(header: String?): Long? {
+        if (header.isNullOrBlank()) return null
+        val match = Regex("""bytes (\d+)-(\d+)/(\d+|\*)""").matchEntire(header.trim()) ?: return null
+        return match.groupValues[1].toLong()
     }
 
     fun parseContentRangeTotal(header: String?): Long? {
@@ -266,46 +318,73 @@ object IcantpyPayloadUpdater {
         }
     }
 
+    /** One downloaded range: its bytes, and the file size from Content-Range. */
+    private class Chunk(val bytes: ByteArray, val total: Long)
+
+    /**
+     * Downloads [url] into [destination] range by range. Each range is read whole into memory and checked (status,
+     * start offset, length) before it is written, and retried up to [CHUNK_ATTEMPTS] times on its own, so a dropped
+     * connection costs one small range instead of the whole download. A server that ignores Range and answers 200
+     * gets the old single-stream copy. Returns the expected file size.
+     */
     private fun writeRangedPayload(url: String, destination: Path): Long? {
         val client = clientFor(url)
-        val firstEnd = DOWNLOAD_CHUNK_BYTES - 1
-        val first = client.send(
-            request(url, Duration.ofMinutes(5), mapOf("Range" to "bytes=0-$firstEnd")),
-            HttpResponse.BodyHandlers.ofInputStream(),
-        )
-        val status = first.statusCode()
-        if (status == 200) {
-            first.body().use { input ->
-                Files.copy(input, destination, StandardCopyOption.REPLACE_EXISTING)
-            }
-            return first.headers().firstValue("Content-Length").orElse(null)?.toLongOrNull()
+        val pauseMs = if (client === LOCAL_HTTP) 0L else CHUNK_PAUSE_MS
+        val onRetry = { attempt: Int, error: Exception ->
+            LOGGER.warn("Payload range from {} failed (attempt {}/{}): {}", url, attempt, CHUNK_ATTEMPTS, error.toString())
         }
-        if (status != 206) {
-            first.body().close()
-            throw IllegalStateException("payload HTTP $status for $url")
-        }
-        val total = parseContentRangeTotal(first.headers().firstValue("Content-Range").orElse(null))
-            ?: run {
-                first.body().close()
-                throw IllegalStateException("payload range response missing Content-Range for $url")
-            }
-        Files.newOutputStream(destination).use { output ->
-            first.body().use { input: InputStream -> input.transferTo(output) }
-            for (window in rangeWindows(total).drop(1)) {
-                val part = client.send(
-                    request(url, Duration.ofMinutes(5), mapOf("Range" to "bytes=${window.first}-${window.last}")),
-                    HttpResponse.BodyHandlers.ofInputStream(),
-                )
-                if (part.statusCode() != 206) {
-                    part.body().close()
-                    throw IllegalStateException(
-                        "payload HTTP ${part.statusCode()} for $url range ${window.first}-${window.last}",
-                    )
+        var whole: Long? = null
+        val first = withRetries(CHUNK_ATTEMPTS, onRetry = onRetry) {
+            val response = client.send(
+                request(url, Duration.ofSeconds(60), mapOf("Range" to "bytes=0-${DOWNLOAD_CHUNK_BYTES - 1}")),
+                HttpResponse.BodyHandlers.ofInputStream(),
+            )
+            if (response.statusCode() == 200) {
+                response.body().use { input ->
+                    Files.copy(input, destination, StandardCopyOption.REPLACE_EXISTING)
                 }
-                part.body().use { input -> input.transferTo(output) }
+                whole = response.headers().firstValue("Content-Length").orElse(null)?.toLongOrNull() ?: -1L
+                null
+            } else {
+                readChunk(response, url, 0L, null)
             }
         }
-        return total
+        if (first == null) return whole?.takeIf { it >= 0 }
+        Files.newOutputStream(destination).use { output ->
+            output.write(first.bytes)
+            for (window in rangeWindows(first.total).drop(1)) {
+                if (pauseMs > 0) Thread.sleep(pauseMs)
+                val chunk = withRetries(CHUNK_ATTEMPTS, onRetry = onRetry) {
+                    val response = client.send(
+                        request(url, Duration.ofSeconds(60), mapOf("Range" to "bytes=${window.first}-${window.last}")),
+                        HttpResponse.BodyHandlers.ofInputStream(),
+                    )
+                    readChunk(response, url, window.first, window.last - window.first + 1)
+                }
+                output.write(chunk.bytes)
+            }
+        }
+        return first.total
+    }
+
+    /** Reads a 206 range fully and checks it starts at [start] and, when known, is [length] bytes long. */
+    private fun readChunk(response: HttpResponse<InputStream>, url: String, start: Long, length: Long?): Chunk {
+        if (response.statusCode() != 206) {
+            response.body().close()
+            throw IllegalStateException("payload HTTP ${response.statusCode()} for $url range from $start")
+        }
+        val header = response.headers().firstValue("Content-Range").orElse(null)
+        val total = parseContentRangeTotal(header)
+        if (total == null || parseContentRangeStart(header) != start) {
+            response.body().close()
+            throw IllegalStateException("payload range from $start has bad Content-Range '$header' for $url")
+        }
+        val bytes = response.body().use { it.readAllBytes() }
+        val wanted = length ?: min(DOWNLOAD_CHUNK_BYTES, total - start)
+        if (bytes.size.toLong() != wanted) {
+            throw IllegalStateException("payload range from $start was ${bytes.size} of $wanted bytes for $url")
+        }
+        return Chunk(bytes, total)
     }
 
     private fun clientFor(url: String): HttpClient {

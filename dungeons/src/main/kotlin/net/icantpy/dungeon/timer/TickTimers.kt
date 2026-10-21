@@ -173,6 +173,7 @@ object TickTimers {
     }
 
     fun onClientTick() {
+        hudTick += 1
         expireNotifications()
         if (settings.debugMode && !pingedThisClientTick) {
             tick()
@@ -206,7 +207,21 @@ object TickTimers {
         LeapOrient.resetClocks()
     }
 
-    fun hudPieces(preview: Boolean = false): List<HudPiece> {
+    /** Client tick counter; part of the [hudPieces] cache key so the HUD text is rebuilt at least once per tick. */
+    private var hudTick = 0
+    private val hudPieceCache = InputCache<List<HudPiece>>()
+
+    /**
+     * Timer HUD pieces. Rebuilt only when an input changes: the client tick, the preview flag, or the settings, clocks,
+     * notifications or dungeon state objects (all immutable data, replaced on change). Clock values move only on ticks
+     * and chat/boss-bar events, which replace [clocks], so the displayed text stays tick-accurate.
+     */
+    fun hudPieces(preview: Boolean = false): List<HudPiece> =
+        hudPieceCache.get(hudTick, preview, settings, clocks, notifications, DungeonListener.state) {
+            buildHudPieces(preview)
+        }
+
+    private fun buildHudPieces(preview: Boolean): List<HudPiece> {
         val dungeon = DungeonListener.state
         val debug = settings.debugMode
         val pieces = ArrayList<HudPiece>(8)

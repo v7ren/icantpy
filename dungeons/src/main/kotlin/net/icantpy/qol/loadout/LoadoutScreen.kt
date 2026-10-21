@@ -1,6 +1,7 @@
 package net.icantpy.qol.loadout
 
 import net.icantpy.gui.McUi
+import net.icantpy.util.Text
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.Screen
@@ -19,6 +20,10 @@ class LoadoutScreen private constructor(
     title: Component,
 ) : Screen(title), ContainerListener {
     private val mc = Minecraft.getInstance()
+
+    /** The live container menu this screen wraps; read-only for diagnostics such as the loadout dump. */
+    val menu: AbstractContainerMenu get() = liveMenu
+
     private var hits: List<Hit> = emptyList()
 
     init {
@@ -64,15 +69,16 @@ class LoadoutScreen private constructor(
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        val icons = Loadout.iconSlots(liveMenu)
+        val icons = Loadout.loadoutEntries(liveMenu, title.string)
         val previous = Loadout.navigationSlot(liveMenu, next = false)
         val next = Loadout.navigationSlot(liveMenu, next = true)
         val panelW = min(260, width - 20).coerceAtLeast(200)
         val columns = 3
         val card = 48
         val gap = 6
+        val cell = card + 14
         val rows = ceil(icons.size / columns.toDouble()).toInt().coerceAtLeast(1)
-        val panelH = (96 + rows * (card + gap) + if (previous != null || next != null) 34 else 0)
+        val panelH = (96 + rows * (cell + gap) + if (previous != null || next != null) 34 else 0)
             .coerceAtMost(height - 20)
             .coerceAtLeast(170)
         val panelX = (width - panelW) / 2
@@ -85,14 +91,18 @@ class LoadoutScreen private constructor(
         graphics.text(mc.font, "Click a loadout to equip it", panelX + 16, panelY + 30, 0xFFAAAAAA.toInt())
 
         val nextHits = mutableListOf<Hit>()
-        icons.forEachIndexed { index, slot ->
+        icons.forEachIndexed { index, (slotIndex, number) ->
+            val slot = liveMenu.slots[slotIndex]
             val x = panelX + 16 + (index % columns) * (card + gap)
-            val y = contentTop + (index / columns) * (card + gap)
+            val y = contentTop + (index / columns) * (cell + gap)
             val hovered = mouseX in x until x + card && mouseY in y until y + card
             graphics.fill(x, y, x + card, y + card, if (hovered) 0xFFE3A2FF.toInt() else 0xFF642F3A.toInt())
             graphics.fill(x + 2, y + 2, x + card - 2, y + card - 2, 0xFF17171D.toInt())
             graphics.item(slot.item, x + 16, y + 8)
             graphics.itemDecorations(mc.font, slot.item, x + 16, y + 8)
+            graphics.text(mc.font, "#$number", x + 3, y + 3, 0xFFAAAAAA.toInt(), true)
+            val label = Text.strip(slot.item.hoverName.string).take(9)
+            graphics.centeredText(mc.font, label, x + card / 2, y + card + 3, 0xFFFFFFFF.toInt())
             if (hovered) graphics.setTooltipForNextFrame(mc.font, slot.item, mouseX, mouseY)
             nextHits += Hit(x, y, card, card, leftAction = { Loadout.click(liveMenu, slot) })
         }

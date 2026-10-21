@@ -9,35 +9,84 @@ import net.icantpy.gui.clampScroll
 import net.icantpy.cosmetics.items.CustomRename
 import net.icantpy.qol.camera.Freelook
 import net.icantpy.qol.camera.FreelookConfig
+import net.icantpy.qol.visual.AmbientStyle
+import net.icantpy.qol.visual.HandShaderMode
+import net.icantpy.qol.visual.SwingMode
+import net.icantpy.qol.visual.TrailStyle
+import net.icantpy.qol.visual.Visuals
+import net.icantpy.qol.visual.VisualsConfig
+import net.icantpy.qol.perf.Culling
+import net.icantpy.qol.perf.FrameGen
+import net.icantpy.qol.perf.FrameGenConfig
+import net.icantpy.qol.perf.MotionBlur
+import net.icantpy.qol.perf.MotionBlurConfig
+import net.icantpy.qol.perf.PerfHud
+import net.icantpy.qol.perf.PerformancePreset
 import net.icantpy.util.HexColor
 import net.icantpy.cosmetics.items.ItemCustomizeColorCodec
 import net.icantpy.cosmetics.morph.PlayerDisguise
+import net.icantpy.qol.shards.ShardChecklistController
 import net.icantpy.cosmetics.morph.MorphCameraMode
 import net.icantpy.dungeon.DropUltimateSettings
 import net.icantpy.dungeon.leap.ClockCrossing
+import net.icantpy.dungeon.leap.LeapEventLog
+import net.icantpy.dungeon.leap.LeapHoldMode
+import net.icantpy.dungeon.leap.LeapHoldSpec
+import net.icantpy.dungeon.leap.LeapTriggerEventMenu
+import net.icantpy.dungeon.leap.ChatChannel
+import net.icantpy.dungeon.leap.ChatMessageMatch
+import net.icantpy.dungeon.leap.ChatSender
+import net.icantpy.dungeon.leap.ChatTextMode
+import net.icantpy.dungeon.leap.LeapChatCooldown
+import net.icantpy.location.SkyblockLocation
 import net.icantpy.dungeon.leap.ClockMetric
 import net.icantpy.dungeon.leap.ClockSpec
 import net.icantpy.dungeon.leap.LeapBossDeathNotifier
 import net.icantpy.dungeon.leap.LeapCenterTarget
 import net.icantpy.dungeon.leap.LeapChatPatterns
 import net.icantpy.dungeon.leap.LeapDungeonClass
+import net.icantpy.dungeon.leap.LeapHealthHysteresis
 import net.icantpy.dungeon.leap.LeapFloor
 import net.icantpy.dungeon.leap.LeapGameState
 import net.icantpy.dungeon.leap.LeapKeybindMode
 import net.icantpy.dungeon.leap.LeapOrient
+import net.icantpy.dungeon.leap.LeapOrientEngine
 import net.icantpy.dungeon.leap.LeapOrientSettings
 import net.icantpy.dungeon.leap.LeapOrientTrigger
 import net.icantpy.dungeon.leap.LeapPhase
 import net.icantpy.dungeon.leap.LeapPreferKind
 import net.icantpy.dungeon.leap.LeapRoster
 import net.icantpy.dungeon.leap.LeapStormRoute
+import net.icantpy.dungeon.leap.LeapAutoKind
+import net.icantpy.dungeon.leap.LeapAutoRouter
+import net.icantpy.dungeon.leap.LeapAutoStep
 import net.icantpy.dungeon.leap.LeapTriggerEvent
 import net.icantpy.dungeon.leap.LeapTriggerCard
 import net.icantpy.dungeon.leap.LeapTriggerCards
+import net.icantpy.dungeon.leap.LeapMarkRouter
+import net.icantpy.hud.markers.MarkerLook
+import net.icantpy.hud.markers.MarkerShapes
+import net.icantpy.hud.markers.MarkerStyle
 import net.icantpy.dungeon.leap.OrientSpot
+import net.icantpy.qol.auto.CursorGuard
+import net.icantpy.qol.invsort.InvSortController
+import net.icantpy.qol.invsort.InvSortEditorScreen
+import net.icantpy.qol.loadout.LoadoutPlan
 import net.icantpy.qol.stats.StatsArmor
 import net.icantpy.slayer.SlayerCarryCounter
+import net.icantpy.slayer.blaze.BeamDodge
+import net.icantpy.slayer.blaze.EscapeMode
+import net.icantpy.slayer.blaze.FirePit
+import net.icantpy.slayer.blaze.FirePitConfig
+import net.icantpy.slayer.aim.AimActivation
+import net.icantpy.slayer.aim.AimConfig
+import net.icantpy.slayer.aim.AimEasing
+import net.icantpy.slayer.aim.AimPoint
+import net.icantpy.slayer.aim.BossAim
 import net.icantpy.dungeon.timer.AlertSounds
+import net.icantpy.dungeon.dragons.DragonController
+import net.icantpy.dungeon.score.ScoreTracker
+import net.icantpy.dungeon.splits.RunSplitsController
 import net.icantpy.dungeon.timer.TickTimers
 import net.icantpy.dungeon.timer.TimerClock
 import net.icantpy.dungeon.timer.TimerHud
@@ -57,14 +106,52 @@ import net.minecraft.world.item.component.DyedItemColor
 import org.jetbrains.skia.Rect
 import org.lwjgl.glfw.GLFW
 
+private const val PAGE_MAX_CONTENT_WIDTH = 520
+private const val OVERVIEW_WIDE_MIN_WIDTH = 480
+private const val OVERVIEW_CARD_HEIGHT = 58
+private const val OVERVIEW_CARD_GAP = 10
+private const val OVERVIEW_TOGGLE_RESERVE = 48
+private const val CONTENT_TOP_PAD = 12
+/** Extra space above a section heading; grouped() already adds 8 after each block, so sections get 16. */
+private const val SECTION_GAP = 8
+private const val SCROLL_STEP = 22
+private const val LEAP_ROW_CONTROL_HEIGHT = 24
+private const val LEAP_CHEVRON_SIZE = 8
+
+/** Width of the "+ Add action" button, right-aligned in the Actions row. */
+private const val ADD_ACTION_BUTTON_WIDTH = 120
+private const val LEAP_VIEW_KEY = "leap-view"
+private const val MIN_LEAP_DROPDOWN_VIEW = 44
+private val LEAP_PHASE_CHOICES = listOf(LeapPhase.ANY, LeapPhase.P1, LeapPhase.P2, LeapPhase.P3, LeapPhase.P4, LeapPhase.P5)
+private val LEAP_PHASE_LABELS = listOf("Any phase", "P1", "P2", "P3", "P4", "P5")
+private val LEAP_FLOOR_CHOICES = listOf(LeapFloor.ANY, LeapFloor.F7, LeapFloor.M7)
+private val LEAP_FLOOR_LABELS = listOf("Any floor", "F7", "M7")
+private val LEAP_ROUTE_CHOICES = listOf(LeapStormRoute.ANY, LeapStormRoute.PY, LeapStormRoute.GY)
+private val LEAP_ROUTE_LABELS = listOf("Any route", "PY", "GY")
+private val LEAP_SECTION_LABELS = listOf("Any section", "S1", "S2", "S3", "S4")
+
 class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private val surface = SkiaSurface()
-    private var tab = ConfigUiSession.tab
-    private var scroll = ConfigUiSession.scrollOf(tab)
+    private var page = ConfigUiSession.page
+    private var subtab = ConfigUiSession.subtabOf(page)
+    private val aetherOverrides = HashMap<AetherModuleId, Boolean>()
+    private var descriptionHoverKey: String? = null
+    private var descriptionHoverSince = 0L
+    private var scroll = ConfigUiSession.scrollOf(page, subtab)
+    private var sidebarScroll = 0
     private var contentHeight = 0
     private var hits: List<GuiHit> = emptyList()
+
+    /** The slider being dragged, until the mouse button is released. */
+    private var dragging: ((Int) -> Unit)? = null
+
+    /** Last value a slider drag committed, so a drag only saves when the snapped value changes. */
+    private var sliderLast = Float.NaN
     private val fields = HashMap<String, String>()
     private val shardPage = ShardChecklistPage()
+    private val splitsPage = SplitsPage()
+    private val scorePage = ScorePage()
+    private val dragonsPage = DragonsPage()
     private var focused: String? = null
     private var toast: String? = null
     private var toastUntil = 0L
@@ -72,7 +159,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private var capturingBind: String? = null
     private var openDebugDropdown: String? = null
     private var leapDropdownSpec: LeapDropdownSpec? = null
+    private var openDropdownRects: List<LayoutRect> = emptyList()
+    private var pendingRevealId: String? = null
     private var debugBossToken = "storm"
+    private var debugFireEvent = LeapTriggerEvent.SECRETS_REACHED
     private var debugPartyToken = "arch"
     private var renamePreview: RenamePreview? = null
     private var metrics = ConfigMetrics.compute(640, 360, GuiLookSettings())
@@ -80,13 +170,18 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private data class RenamePreview(val stack: net.minecraft.world.item.ItemStack, val x: Int, val y: Int)
 
     private data class LeapDropdownSpec(
+        val anchor: LayoutRect,
         val x: Int,
-        val anchorY: Int,
         val width: Int,
-        val options: List<String>,
+        val lines: List<DropdownLine>,
         val selected: Int,
         val onSelect: (Int) -> Unit,
     )
+
+    /** Scroll offset of the open leap dropdown, in pixels. Reset when a dropdown opens. */
+    private var leapDropdownScroll = 0
+    /** Set when a dropdown opens so its selected line is scrolled into view once. */
+    private var leapDropdownFocusPending = false
 
     override fun isPauseScreen(): Boolean = false
 
@@ -104,101 +199,27 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     override fun removed() {
-        ConfigUiSession.save(tab, scroll)
+        ConfigUiSession.save(page, subtab, scroll)
         super.removed()
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
-        val look = TickTimers.settings.look
-        val chrome = GuiChrome.of(look)
-        metrics = ConfigMetrics.compute(width, height, look)
+        // The config window always uses the rail shell; older saved layouts map onto it.
+        val chrome = GuiChrome.of(TickTimers.settings.look)
+        metrics = shellMetrics()
         val m = metrics
+        leapDropdownSpec = null
+        openDropdownRects = emptyList()
         surface.paint(graphics) { canvas ->
-            val draw = MenuDraw(
-                canvas,
-                m.viewTop,
-                m.viewBottom,
-                m.contentLeft,
-                m.panelX + m.panelW,
-                mouseX,
-                mouseY,
-                chrome,
-            )
-            draw.paintConfigChrome(m, tab, ConfigUiSession.pageIndex(), { item ->
-                if (tab != item) {
-                    ConfigUiSession.save(tab, scroll)
-                    tab = item
-                    scroll = ConfigUiSession.scrollOf(item)
-                    focused = null
-                    openDebugDropdown = null
-                }
-            }, { page ->
-                if (ConfigUiSession.pageIndex() != page) {
-                    ConfigUiSession.selectPage(page)
-                    scroll = 0
-                    focused = null
-                    openDebugDropdown = null
-                }
-            }) {
-                IcantpyGui.requestPayloadReload()
-            }
-            canvas.save()
-            canvas.clipRect(
-                Rect.makeLTRB(
-                    m.contentLeft.toFloat(),
-                    m.viewTop.toFloat(),
-                    (m.panelX + m.panelW - 8).toFloat(),
-                    m.viewBottom.toFloat(),
-                ),
-            )
-            var y = m.viewTop + 12 - scroll
-            y = when (tab) {
-                ConfigTab.DUNGEONS -> when (ConfigUiSession.dungeonPage) {
-                    DungeonPage.TIMERS -> drawTimers(draw, y)
-                    DungeonPage.ALERTS -> drawNotifications(draw, y)
-                    DungeonPage.LEAP -> drawLeap(draw, y)
-                }
-                ConfigTab.COSMETICS -> when (ConfigUiSession.cosmeticsPage) {
-                    CosmeticsPage.ITEMS -> drawItems(draw, y)
-                    CosmeticsPage.MORPH -> drawMorph(draw, y)
-                }
-                ConfigTab.QOL -> when (ConfigUiSession.qolPage) {
-                    QolPage.CAMERA -> drawCamera(draw, y)
-                    QolPage.BOXES -> drawWaypoints(draw, y)
-                    QolPage.STATS -> drawStats(draw, y)
-                    QolPage.COMBAT -> drawCombat(draw, y)
-                    QolPage.SHARDS -> shardPage.draw(draw, m, y, focused, ::toast) {
-                        scroll = 0
-                        ConfigUiSession.save(tab, 0)
-                    }
-                }
-                ConfigTab.SLAYER -> when (ConfigUiSession.slayerPage) {
-                    SlayerPage.CARRIES -> drawCarries(draw, y)
-                }
-                ConfigTab.GUI -> drawGui(draw, y)
-            }
-            contentHeight = y + scroll - m.viewTop + 16
-            canvas.restore()
-            draw.unclipped {
-                val message = toast
-                if (message != null) {
-                    if (System.currentTimeMillis() > toastUntil) {
-                        toast = null
-                    } else {
-                        draw.text(message, m.innerLeft, m.panelY + m.panelH - 18, draw.palette.accent, draw.descFont)
-                    }
-                } else {
-                    draw.text(
-                        "Right Shift toggles this panel",
-                        m.innerLeft,
-                        m.panelY + m.panelH - 18,
-                        draw.palette.tertiary,
-                        draw.microFont,
-                    )
-                }
-                draw.scrollbar(m.panelX + m.panelW - 10, m.viewTop + 8, m.viewHeight - 16, contentHeight, scroll)
-            }
+            val draw = MenuDraw(canvas, m.viewTop, m.viewBottom, m.contentLeft, m.panelX + m.panelW, mouseX, mouseY, chrome)
+            paintShell(draw, m)
+            paintPageContent(draw, m)
+            draw.unclipped { drawLeapDropdownOverlay(draw) }
+            if (searchOpen()) draw.unclipped { draw.paintSearchResults(m, ConfigNav.search(field(SEARCH_FIELD_ID)), ::openFromSearch) }
+            draw.paintTooltip()
+            draw.unclipped { paintToast(draw, m) }
+            paintContentScrollbar(draw, m)
             hits = draw.hits
         }
         renamePreview?.let { preview ->
@@ -208,9 +229,115 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         if (contentHeight > 0) {
             scroll = clampScroll(scroll, contentHeight, m.viewHeight)
-            ConfigUiSession.save(tab, scroll)
+            ConfigUiSession.save(page, subtab, scroll)
+        }
+        sidebarScroll = clampScroll(sidebarScroll, sidebarContentHeight(), sidebarBottom(m) - sidebarTop(m))
+    }
+
+    private fun shellMetrics(): ConfigMetrics {
+        val base = ConfigMetrics.compute(width, height, TickTimers.settings.look.copy(layout = GuiLayoutId.RAIL))
+        return base.copy(
+            pageBar = if (page.subtabs.isEmpty()) 0 else base.pageBar,
+            maxContentWidth = PAGE_MAX_CONTENT_WIDTH,
+        )
+    }
+
+    /** Paints the window frame, the page list and the header bar (sidebar stays in its own clip). */
+    private fun paintShell(draw: MenuDraw, m: ConfigMetrics) {
+        draw.paintShellFrame(m)
+        draw.paintSidebar(m, page, sidebarScroll, ::openPage)
+        draw.unclipped {
+            draw.paintHeader(m, page, headerToggle(), field(SEARCH_FIELD_ID), focused == SEARCH_FIELD_ID)
+            if (page.subtabs.isNotEmpty()) {
+                draw.paintSubtabs(m, page.subtabs, subtab, ::selectSubtab)
+            }
         }
     }
+
+    private fun paintPageContent(draw: MenuDraw, m: ConfigMetrics) {
+        draw.canvas.save()
+        draw.canvas.clipRect(
+            Rect.makeLTRB(
+                m.contentLeft.toFloat(),
+                m.viewTop.toFloat(),
+                (m.panelX + m.panelW - 8).toFloat(),
+                m.viewBottom.toFloat(),
+            ),
+        )
+        val endY = drawCurrentPage(draw, m, m.viewTop + CONTENT_TOP_PAD - scroll)
+        contentHeight = endY + scroll - m.viewTop + 16
+        draw.canvas.restore()
+    }
+
+    private fun drawCurrentPage(draw: MenuDraw, m: ConfigMetrics, y: Int): Int = when (ConfigContents.at(page, subtab)) {
+        ConfigContent.OVERVIEW -> drawOverview(draw, y)
+        ConfigContent.CLOCKS_DISPLAY -> drawClocksDisplay(draw, y)
+        ConfigContent.CLOCKS_DUNGEON -> drawClocksDungeon(draw, y)
+        ConfigContent.CLOCKS_MECHANICS -> drawClocksMechanics(draw, y)
+        ConfigContent.CLOCKS_DEBUG -> drawClocksDebug(draw, y)
+        ConfigContent.ALERTS -> drawNotifications(draw, y)
+        ConfigContent.SPLITS -> splitsPage.draw(draw, m, y, ::toast) { openRunHudEditor(RunHudEditorScreen.Target.SPLITS) }
+        ConfigContent.SCORE -> scorePage.draw(draw, m, y) { openRunHudEditor(RunHudEditorScreen.Target.SCORE) }
+        ConfigContent.DRAGONS -> dragonsPage.draw(draw, m, y, ::toast) { openRunHudEditor(RunHudEditorScreen.Target.DRAGON) }
+        ConfigContent.LEAP_ROUTES -> drawLeapRoute(draw, y)
+        ConfigContent.LEAP_LAYOUT -> drawLeapLayout(draw, y)
+        ConfigContent.LEAP_LOOK -> drawLeapLook(draw, y)
+        ConfigContent.LEAP_QUICK_LEAP -> drawLeapQuickLeap(draw, y)
+        ConfigContent.LEAP_KEYBINDS -> drawLeapKeybinds(draw, y)
+        ConfigContent.LEAP_DEBUG -> drawLeapDebug(draw, y)
+        ConfigContent.ITEMS_CUSTOMIZE -> drawItemCustomize(draw, y)
+        ConfigContent.ITEMS_SHARING -> drawItemSharing(draw, y)
+        ConfigContent.MORPH -> drawMorph(draw, y)
+        ConfigContent.VISUALS_CLEANUP -> drawVisualsCleanup(draw, y)
+        ConfigContent.VISUALS_WORLD -> drawVisualsWorld(draw, y)
+        ConfigContent.VISUALS_CAMERA -> drawVisualsCamera(draw, y)
+        ConfigContent.VISUALS_VIEWMODEL -> drawVisualsViewmodel(draw, y)
+        ConfigContent.VISUALS_HAND -> drawVisualsHand(draw, y)
+        ConfigContent.VISUALS_EFFECTS -> drawVisualsEffects(draw, y)
+        ConfigContent.VISUALS_MODEL -> drawVisualsModel(draw, y)
+        ConfigContent.FREELOOK -> drawCamera(draw, y)
+        ConfigContent.PERFORMANCE -> drawPerformance(draw, y)
+        ConfigContent.WAYPOINTS -> drawWaypoints(draw, y)
+        ConfigContent.STATS -> drawStats(draw, y)
+        ConfigContent.SHARDS -> shardPage.draw(draw, m, y, focused, ::toast) {
+            scroll = 0
+            ConfigUiSession.save(page, subtab, 0)
+        }
+        ConfigContent.INVENTORY_SORT -> drawInventorySort(draw, y)
+        ConfigContent.DROP_ULT -> drawCombat(draw, y)
+        ConfigContent.CARRIES_COUNTER -> drawCarriesCounter(draw, y)
+        ConfigContent.CARRIES_KEYS -> drawCarriesKeys(draw, y)
+        ConfigContent.CARRIES_PLAYERS -> drawCarriesPlayers(draw, y)
+        ConfigContent.FIRE_PITS -> drawFirePits(draw, y)
+        ConfigContent.BOSS_AIM -> drawBossAim(draw, y)
+        ConfigContent.APPEARANCE_THEME -> drawAppearanceTheme(draw, y)
+        ConfigContent.APPEARANCE_TEXT_SHAPE -> drawAppearanceTextShape(draw, y)
+        ConfigContent.APPEARANCE_ADVANCED -> drawAppearanceAdvanced(draw, y)
+        // HUD Layout opens the HUD editor from the sidebar and never reaches this dispatch.
+        ConfigContent.HUD_LAYOUT -> y
+    }
+
+    private fun paintToast(draw: MenuDraw, m: ConfigMetrics) {
+        val message = toast ?: return
+        if (System.currentTimeMillis() > toastUntil) {
+            toast = null
+            return
+        }
+        val toastWidth = draw.measure(message, draw.smallFont) + 36
+        val toastX = m.panelX + (m.panelW - toastWidth) / 2
+        val toastY = m.panelY + m.panelH - 38
+        draw.round(toastX, toastY, toastWidth, 28, 14f, draw.palette.window)
+        draw.outline(toastX, toastY, toastWidth, 28, 14f, 0x55C9BBFF)
+        draw.text(message, toastX + 18, toastY + 7, draw.palette.text, draw.smallFont)
+    }
+
+    private fun paintContentScrollbar(draw: MenuDraw, m: ConfigMetrics) {
+        if (contentHeight > m.viewHeight) {
+            draw.scrollbar(m.panelX + m.panelW - 10, m.viewTop + 8, m.viewHeight - 16, contentHeight, scroll)
+        }
+    }
+
+    private fun searchOpen(): Boolean = focused == SEARCH_FIELD_ID && field(SEARCH_FIELD_ID).isNotBlank()
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
         if (event.button() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
@@ -222,6 +349,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             focused = null
             return true
         }
+        if (leapDropdownSpec != null && openDropdownRects.none { it.contains(mx, my) }) {
+            closeLeapDropdown()
+            return true
+        }
         val hit = hits.lastOrNull { it.rect.contains(mx, my) }
         if (hit == null) {
             focused = null
@@ -230,6 +361,23 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         focused = hit.fieldId
         hit.action?.invoke()
+        hit.drag?.let { drag ->
+            sliderLast = Float.NaN
+            dragging = drag
+            drag(mx)
+        }
+        return true
+    }
+
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        val drag = dragging ?: return super.mouseDragged(event, dragX, dragY)
+        drag(event.x().toInt())
+        return true
+    }
+
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        if (dragging == null) return super.mouseReleased(event)
+        dragging = null
         return true
     }
 
@@ -237,12 +385,23 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         val mx = mouseX.toInt()
         val my = mouseY.toInt()
         val m = metrics
+        val delta = (scrollY * SCROLL_STEP).toInt()
+        // An open leap dropdown takes the wheel; its height is clamped when it is painted.
+        if (leapDropdownSpec != null && openDropdownRects.getOrNull(1)?.contains(mx, my) == true) {
+            leapDropdownScroll = (leapDropdownScroll - delta).coerceAtLeast(0)
+            return true
+        }
+        val sidebarHeight = sidebarBottom(m) - sidebarTop(m)
+        if (mx >= m.panelX && mx < m.contentLeft && my >= sidebarTop(m) && my < sidebarBottom(m)) {
+            sidebarScroll = clampScroll(sidebarScroll - delta, sidebarContentHeight(), sidebarHeight)
+            return true
+        }
         if (mx < m.contentLeft || mx >= m.panelX + m.panelW || my < m.viewTop || my >= m.viewBottom) {
             return true
         }
-        scroll = clampScroll(scroll - (scrollY * 22).toInt(), contentHeight, m.viewHeight)
+        scroll = clampScroll(scroll - delta, contentHeight, m.viewHeight)
         openDebugDropdown = null
-        ConfigUiSession.save(tab, scroll)
+        ConfigUiSession.save(page, subtab, scroll)
         return true
     }
 
@@ -262,11 +421,13 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         if (id != null) {
             when (event.key()) {
                 GLFW.GLFW_KEY_ESCAPE -> {
+                    if (id == SEARCH_FIELD_ID) fields[SEARCH_FIELD_ID] = ""
                     focused = null
                     return true
                 }
                 GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
                     if (id == "r:name") applyRenameField()
+                    if (id == SEARCH_FIELD_ID) ConfigNav.search(field(id)).firstOrNull()?.let(::openFromSearch)
                     focused = null
                     return true
                 }
@@ -300,8 +461,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun drawStats(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Armor stat presets and the fast swap setup.")
         val stats = TickTimers.settings.statsArmor
-        var y = section(draw, startY, "Stats armor", "Use /icantpy stats or the altered-stats keybind for the fast armor menu.")
+        var y = section(draw, helpY, "Stats armor", "Use /icantpy stats or the altered-stats keybind for the fast armor menu.")
         y = grouped(draw, y, 3) { rowY, index ->
             when (index) {
                 0 -> toggleRow(draw, rowY, "Enabled", "Allow the altered stats menu to open.", stats.enabled, false) {
@@ -315,7 +477,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y, "Setup", "Open the altered menu, press SETUP, then capture items from your inventory.")
+        y = section(draw, y + SECTION_GAP, "Setup", "Open the altered menu, press SETUP, then capture items from your inventory.")
         y = grouped(draw, y, 2) { rowY, index ->
             if (index == 0) {
                 actionRow(draw, rowY, "Configured items", "${stats.presets.size} saved replacement${if (stats.presets.size == 1) "" else "s"}.", last = false) { cy ->
@@ -332,31 +494,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return y
     }
 
-    private fun drawLeap(draw: MenuDraw, startY: Int): Int {
-        var y = section(draw, startY, "Spirit Leap", "Route triggers arm a local center card. The server inventory order stays unchanged.")
-        y = grouped(draw, y, 1) { rowY, _ ->
-            actionRow(draw, rowY, "Page", "Route sets class leaps. Menu is look and announce. Debug simulates the live pipeline.", last = true) { cy ->
-                var x = rightX(0)
-                LeapConfigPage.entries.asReversed().forEach { page ->
-                    x -= draw.measure(page.label(), draw.buttonFont) + 24
-                    draw.chip(page.label(), x, cy, ConfigUiSession.leapPage == page) {
-                        ConfigUiSession.leapPage = page
-                        focused = null
-                    }
-                    x -= 6
-                }
-            }
-        }
-        return when (ConfigUiSession.leapPage) {
-            LeapConfigPage.ROUTE -> drawLeapRoute(draw, y)
-            LeapConfigPage.MENU -> drawLeapMenu(draw, y)
-            LeapConfigPage.DEBUG -> drawLeapDebug(draw, y)
-        }
-    }
-
     private fun drawLeapRoute(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Triggers arm a leap target or run an inventory sort when a boss event happens.")
         val leap = TickTimers.settings.leap
-        var y = grouped(draw, startY, 3) { rowY, index ->
+        var y = grouped(draw, helpY, 3) { rowY, index ->
             when (index) {
                 0 -> actionRow(draw, rowY, "Class", "Auto uses Odin. Unknown is not all classes.", last = false) { cy ->
                     var x = rightX(0)
@@ -413,11 +554,15 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         y = actionBar(draw, y, "Custom trigger") {
             val chainW = draw.button("Chain", rightX(56), it, ButtonStyle.GHOST) {
-                TickTimers.updateLeap { it.upsertTrigger(LeapOrientTrigger.create(LeapTriggerEvent.LEAP_CHAIN, "berserk")) }
+                // A chain card is only useful with its leap, so this one starts with the leap-target row.
+                addLeapTrigger(
+                    LeapOrientTrigger.create(LeapTriggerEvent.LEAP_CHAIN, "berserk")
+                        .copy(steps = listOf(LeapAutoStep.leapTarget())),
+                )
                 toast("added chain trigger")
             }
             draw.button("Add", rightX(56) - chainW - 8, it, ButtonStyle.PRIMARY) {
-                TickTimers.updateLeap { it.upsertTrigger(LeapOrientTrigger.create(LeapTriggerEvent.CLOCK, "healer")) }
+                addLeapTrigger(LeapOrientTrigger.create(LeapTriggerEvent.CLOCK, "healer"))
                 toast("added clock trigger")
             }
         }
@@ -431,117 +576,210 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             !viewClass.isReal() -> "All classes"
             else -> viewClass.displayName
         }
-        var viewAnchor: Triple<Int, Int, Int>? = null
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Preset view", "Browse rules without changing your dungeon class.", last = true) { cy ->
-                val selectW = (draw.measure("$viewLabel ▾", draw.buttonFont) + 20).coerceAtMost(innerWidth() - 28)
-                val selectX = rightX(selectW)
-                draw.button("$viewLabel ▾", selectX, cy, ButtonStyle.GHOST) {
-                    openDebugDropdown = if (openDebugDropdown == "leap-view") null else "leap-view"
-                }
-                val menuW = (viewLabels.maxOf { draw.measure(it, draw.buttonFont) } + 20)
-                    .coerceAtMost(innerWidth() - 28)
-                viewAnchor = Triple((selectX + selectW - menuW).coerceAtLeast(innerLeft() + 14), cy + 24, menuW)
-            }
-        }
-        val groups = listOf("P1", "P2", "S1", "S2", "S3", "S4", "P4", "P5", "Other")
-        leapDropdownSpec = null
-        val visible = leap.visibleTriggers(viewClass)
-        groups.forEach { group ->
-            val rows = visible.filter { it.guiGroup() == group }
-            if (rows.isEmpty()) return@forEach
-            y = leapGroup(draw, y, group, rows)
-        }
-        val leftover = visible.filter { it.guiGroup() !in groups }
-        if (leftover.isNotEmpty()) y = leapGroup(draw, y, "Other", leftover)
-        if (openDebugDropdown == "leap-view") {
-            viewAnchor?.let { (x, anchorY, width) ->
-                draw.dropdownMenu(x, anchorY, width, viewLabels, viewOptions.indexOf(ConfigUiSession.leapViewClass)) { index ->
+                val selectW = selectWidth(draw, viewLabel)
+                val anchor = LayoutRect(rightX(selectW), cy, selectW, LEAP_ROW_CONTROL_HEIGHT)
+                leapSelect(draw, LEAP_VIEW_KEY, viewLabel, viewLabels, viewOptions.indexOf(ConfigUiSession.leapViewClass), anchor) { index ->
                     ConfigUiSession.leapViewClass = viewOptions[index]
-                    openDebugDropdown = null
                 }
             }
         }
-        if (openDebugDropdown?.startsWith("leap-select:") == true) {
-            leapDropdownSpec?.let { spec ->
-                draw.dropdownMenu(spec.x, spec.anchorY, spec.width, spec.options, spec.selected) { index ->
-                    spec.onSelect(index)
-                    openDebugDropdown = null
-                }
-            }
-        }
-        return y
-    }
-
-    private fun leapGroup(draw: MenuDraw, startY: Int, group: String, rows: List<LeapOrientTrigger>): Int {
-        val collapsed = group in ConfigUiSession.leapCollapsed
-        var y = actionBar(draw, startY, group) {
-            draw.button(if (collapsed) "Show" else "Hide", rightX(52), it, ButtonStyle.GHOST) {
-                if (collapsed) ConfigUiSession.leapCollapsed.remove(group)
-                else ConfigUiSession.leapCollapsed += group
-            }
-        }
-        if (collapsed) return y
-        LeapTriggerCards.group(rows).forEach { card ->
+        // One flat list in stored order: editing a trigger never moves its card.
+        LeapTriggerCards.group(leap.visibleTriggers(viewClass)).forEach { card ->
             y = leapTriggerBlock(draw, y, card)
         }
         return y
     }
 
+    private fun selectWidth(draw: MenuDraw, label: String): Int =
+        (draw.measure(label, draw.buttonFont) + 48).coerceAtMost(innerWidth() - 28)
+
+    /**
+     * Select button whose options open in an overlay. The overlay is painted after the scrolled
+     * content (see [drawLeapDropdownOverlay]) so it stays above every card.
+     */
     private fun leapSelect(
         draw: MenuDraw,
         key: String,
-        label: String,
+        shown: String,
         options: List<String>,
         selected: Int,
-        x: Int,
-        y: Int,
-        maxWidth: Int,
+        anchor: LayoutRect,
+        headers: Map<Int, String> = emptyMap(),
         onSelect: (Int) -> Unit,
-    ): Int {
-        if (options.isEmpty()) return 0
-        val safeSelected = selected.coerceIn(options.indices)
-        val buttonLabel = draw.fit("$label: ${options[safeSelected]} ▾", maxWidth - 20, draw.buttonFont)
-        val buttonWidth = (draw.measure(buttonLabel, draw.buttonFont) + 20).coerceAtMost(maxWidth)
-        draw.button(buttonLabel, x, y, ButtonStyle.GHOST) {
+    ) {
+        if (options.isEmpty()) return
+        draw.selectButton(shown, anchor.x, anchor.y, anchor.w, anchor.h) {
+            val opening = openDebugDropdown != key
             openDebugDropdown = if (openDebugDropdown == key) null else key
+            if (opening) {
+                leapDropdownScroll = 0
+                leapDropdownFocusPending = true
+            }
         }
-        if (openDebugDropdown == key) {
-            val menuWidth = options.maxOf { draw.measure(it, draw.buttonFont) + 18 }
-                .coerceAtMost(maxWidth)
-            leapDropdownSpec = LeapDropdownSpec(
-                x = (x + buttonWidth - menuWidth).coerceAtLeast(innerLeft() + 14),
-                anchorY = y + 24,
-                width = menuWidth,
-                options = options,
-                selected = safeSelected,
-                onSelect = onSelect,
-            )
+        if (openDebugDropdown != key) return
+        val widest = options.maxOf { draw.measure(it, draw.buttonFont) } + 24
+        val menuWidth = maxOf(anchor.w, widest)
+        val menuX = (anchor.right - menuWidth).coerceAtLeast(innerLeft() + 14)
+        val lines = buildList {
+            options.forEachIndexed { index, label ->
+                headers[index]?.let { add(DropdownLine(it, null)) }
+                add(DropdownLine(label, index))
+            }
         }
-        return buttonWidth
+        leapDropdownSpec = LeapDropdownSpec(
+            anchor = anchor,
+            x = menuX,
+            width = menuWidth,
+            lines = lines,
+            selected = selected.coerceIn(options.indices),
+            onSelect = onSelect,
+        )
+    }
+
+    /**
+     * Paints the open leap dropdown below its anchor, or above it when the space below is short. Long
+     * lists are capped to the larger of the two spaces and scroll with the mouse wheel.
+     */
+    private fun drawLeapDropdownOverlay(draw: MenuDraw) {
+        val spec = leapDropdownSpec ?: return
+        val m = metrics
+        val gap = LeapTriggerLayout.DROPDOWN_GAP
+        val fullHeight = dropdownLinesHeight(spec.lines)
+        val spaceBelow = m.viewBottom - (spec.anchor.bottom + gap)
+        val spaceAbove = spec.anchor.y - gap - m.viewTop
+        val below = spaceBelow >= fullHeight || spaceBelow >= spaceAbove
+        val menuHeight = minOf(fullHeight, (if (below) spaceBelow else spaceAbove).coerceAtLeast(MIN_LEAP_DROPDOWN_VIEW))
+        val top = if (below) spec.anchor.bottom + gap else spec.anchor.y - gap - menuHeight
+        if (leapDropdownFocusPending) {
+            leapDropdownFocusPending = false
+            leapDropdownScroll = scrollToDropdownOption(spec.lines, spec.selected, menuHeight)
+        }
+        leapDropdownScroll = draw.dropdownScrollable(spec.x, top, spec.width, menuHeight, spec.lines, spec.selected, leapDropdownScroll) { index ->
+            spec.onSelect(index)
+            closeLeapDropdown()
+        }
+        openDropdownRects = listOf(spec.anchor, LayoutRect(spec.x, top, spec.width, menuHeight))
+    }
+
+    /** Scroll offset that puts [option] near the middle of a [viewHeight] window. */
+    private fun scrollToDropdownOption(lines: List<DropdownLine>, option: Int, viewHeight: Int): Int {
+        var top = 0
+        for (line in lines) {
+            if (line.option == option) return (top - viewHeight / 2).coerceAtLeast(0)
+            top += dropdownLineHeight(line)
+        }
+        return 0
+    }
+
+    /** Headers are placed before the first option of each group. */
+    private fun leapEventHeaders(events: List<LeapTriggerEvent>): Map<Int, String> = events.indices
+        .filter { it == 0 || events[it].group != events[it - 1].group }
+        .associateWith { events[it].group }
+
+    private fun closeLeapDropdown() {
+        openDebugDropdown = null
+        leapDropdownSpec = null
+    }
+
+    /** Event help, plus how a leap target and the other actions run together when a card has both. */
+    private fun leapHelpText(trigger: LeapOrientTrigger): String {
+        val event = leapEventHelp(trigger.event)
+        return if (trigger.armLeap && trigger.queueableSteps().isNotEmpty()) {
+            "$event Leap target is applied instantly; other actions run in order."
+        } else {
+            event
+        }
     }
 
     private fun leapEventHelp(event: LeapTriggerEvent): String = when (event) {
         LeapTriggerEvent.BOSS_STORM_END -> "Storm dies and the party enters the post-Storm route."
-        LeapTriggerEvent.BOSS_STORM_START -> "Maxor dies and the party moves into Storm."
-        LeapTriggerEvent.BOSS_GOLDOR -> "Goldor's fight begins."
+        LeapTriggerEvent.MAXOR_START -> "Maxor's intro line plays and the P1 fight begins."
+        LeapTriggerEvent.MAXOR_DEATH -> "Maxor dies (his death line, or his health bar drops to zero after being seen alive)."
+        LeapTriggerEvent.BOSS_STORM_START -> "Storm starts P2 (Storm's intro line, right after Maxor dies)."
+        LeapTriggerEvent.WITHER_KING_DEATH -> "Wither King dies at the end of the F7/M7 run."
+        LeapTriggerEvent.BOSS_GOLDOR -> "Goldor starts P3 (his intro line)."
         LeapTriggerEvent.BOSS_CORE -> "The Goldor core opens."
         LeapTriggerEvent.BOSS_GOLDOR_DEATH -> "Goldor dies and the Necron phase begins."
         LeapTriggerEvent.BOSS_NECRON -> "Necron drops into the main fight."
         LeapTriggerEvent.BOSS_NECRON_DEATH -> "Necron dies and relics become available."
         LeapTriggerEvent.BOSS_P5 -> "The P5 relic phase is detected."
         LeapTriggerEvent.RELIC_PICKUP -> "You pick up a relic in P5."
+        LeapTriggerEvent.RELIC_PLACED_SELF -> "Your own relic leaves your inventory next to its cauldron (P5). Color filters the relic color."
+        LeapTriggerEvent.RELIC_PLACED_ANY -> "Any relic appears in its cauldron (P5), once per color per run. Color filters the relic color."
+        LeapTriggerEvent.MAXOR_STUNNED -> "Maxor is stunned by the crystal beam."
+        LeapTriggerEvent.BOSS_ENRAGED -> "A boss becomes enraged. The match filters on the boss name."
+        LeapTriggerEvent.CRYSTAL_PICKUP -> "A player picks up an Energy Crystal. Match filters on the player."
+        LeapTriggerEvent.STORM_CRUSHED -> "Storm's crush line plays (Oof or Ouch, that hurt!)."
+        LeapTriggerEvent.STORM_PAD_PHASE -> "Storm's lightning or pad phase starts."
+        LeapTriggerEvent.WK_DRAGON_KILLED -> "A Wither King dragon is killed."
+        LeapTriggerEvent.DRAGON_SPAWNING -> "A wither dragon starts spawning. Match takes a dragon color, such as Red."
+        LeapTriggerEvent.DRAGON_SPAWNED -> "A wither dragon becomes alive. Match takes a dragon color, such as Red."
+        LeapTriggerEvent.DRAGON_KILLED -> "A wither dragon is killed. Match takes a dragon color, such as Red."
+        LeapTriggerEvent.DRAGON_PRIORITY -> "The dragon chosen to be killed first is decided after a split spawn. Match takes a dragon color."
+        LeapTriggerEvent.BAT_KILLED -> "A bonus bat is killed."
+        LeapTriggerEvent.LIVID_START -> "Livid introduces himself and the fight begins."
+        LeapTriggerEvent.SADAN_GIANTS -> "Sadan releases his giants."
+        LeapTriggerEvent.SADAN_DONE -> "Sadan is defeated."
+        LeapTriggerEvent.PROFESSOR_GUARDIAN -> "The Professor uses his ultimate technique."
+        LeapTriggerEvent.ABILITY_COOLDOWN -> "You try to use an ability that is on cooldown. Fires at most once every 3 seconds."
         LeapTriggerEvent.LEAPED_TO -> "A party member announces that they leaped to someone."
         LeapTriggerEvent.SELF_LEAP -> "You successfully leap to a party member."
-        LeapTriggerEvent.LEAP_CHAIN -> "A follow-up rule runs after your own leap."
+        LeapTriggerEvent.LEAP_CHAIN -> "A follow-up rule runs after your own leap. To leap again after a leap target, add a Follow-up action instead; it is the simpler inline option."
         LeapTriggerEvent.CLOCK -> "A dungeon timer reaches the configured threshold."
+        LeapTriggerEvent.RUN_START -> "Mort hands you the map and the run begins."
+        LeapTriggerEvent.RUN_END -> "The EXTRA STATS summary appears at the end of the run."
+        LeapTriggerEvent.BOSS_ENTRY -> "The party enters a boss room and the boss introduces itself."
+        LeapTriggerEvent.BLOOD_OPEN -> "The Blood Door opens."
+        LeapTriggerEvent.BLOOD_CAMP_DONE -> "The Watcher finishes the blood camp."
+        LeapTriggerEvent.BLOOD_CLEAR -> "The Watcher lets the party pass the blood room."
+        LeapTriggerEvent.WITHER_KEY -> "A player picks up a Wither Key."
+        LeapTriggerEvent.BLOOD_KEY -> "A player picks up a Blood Key."
+        LeapTriggerEvent.WITHER_DOOR -> "A player opens a Wither door."
+        LeapTriggerEvent.PRINCE_KILLED -> "A Prince is killed."
+        LeapTriggerEvent.PUZZLE_FAIL -> "A puzzle fails and names the player who failed it."
+        LeapTriggerEvent.TERMINAL_DONE -> "A terminal, lever or device is completed."
+        LeapTriggerEvent.SECTION_DONE -> "The last terminal of a P3 section is completed."
+        LeapTriggerEvent.GATE_DESTROYED -> "The gate is destroyed."
+        LeapTriggerEvent.P5_START -> "Wither King starts P5."
+        LeapTriggerEvent.BONZO_DEAD -> "Bonzo dies."
+        LeapTriggerEvent.SELF_DEATH -> "You die."
+        LeapTriggerEvent.TEAMMATE_DEATH -> "A teammate dies."
+        LeapTriggerEvent.MASK_PROC -> "Your Bonzo, Spirit or Phoenix mask saves you."
+        LeapTriggerEvent.HEALTH_LOW -> "Your health drops below the chosen share of max health."
+        LeapTriggerEvent.ISLAND_ENTERED -> "You arrive on an island. Match takes an island name, such as Crimson Isle."
+        LeapTriggerEvent.ISLAND_LEFT -> "You leave an island. Match takes an island name."
+        LeapTriggerEvent.DUNGEON_ENTERED -> "A dungeon run starts. Fires once the floor is known, or after 10 seconds without one."
+        LeapTriggerEvent.DUNGEON_LEFT -> "You leave the dungeon."
+        LeapTriggerEvent.PLAYER_READY -> "A party member readies up. Match filters on the player."
+        LeapTriggerEvent.COUNTDOWN -> "The one-second start countdown begins."
+        LeapTriggerEvent.CLASS_SELECTED -> "You pick a dungeon class. Match takes a class name."
+        LeapTriggerEvent.PF_JOINED -> "A player joins through Party Finder. Match filters on the player."
+        LeapTriggerEvent.SECRETS_REACHED -> "The tab-list secret count reaches the At least value. Fires once per run."
+        LeapTriggerEvent.CRYPTS_REACHED -> "The tab-list crypt count reaches the At least value. Fires once per run."
+        LeapTriggerEvent.CLEARED_REACHED -> "The sidebar cleared percentage reaches the At least value. Fires once per run."
+        LeapTriggerEvent.DEATHS_CHANGED -> "The team death count goes up. Fires on every increase."
+        LeapTriggerEvent.PUZZLE_SOLVED -> "A puzzle is solved."
+        LeapTriggerEvent.MIMIC_DEAD -> "A party member reports the Mimic is dead."
+        LeapTriggerEvent.BLESSING -> "A blessing is picked up. Match takes a blessing name, such as Power."
+        LeapTriggerEvent.KUUDRA_SUPPLIES -> "Elle announces the supplies phase."
+        LeapTriggerEvent.KUUDRA_BUILD_DONE -> "Elle reports the ballista is ready."
+        LeapTriggerEvent.KUUDRA_STUN -> "Kuudra is stunned."
+        LeapTriggerEvent.KUUDRA_LAIR -> "Elle reaches the final lair."
+        LeapTriggerEvent.SLAYER_STARTED -> "A slayer quest starts."
+        LeapTriggerEvent.SLAYER_BOSS_SPAWNED -> "The sidebar shows Slay the boss!."
+        LeapTriggerEvent.SLAYER_COMPLETE -> "The slayer quest is complete."
+        LeapTriggerEvent.SLAYER_FAILED -> "The slayer quest fails."
+        LeapTriggerEvent.CHAT_MESSAGE -> "Runs when a chat message matches. Tip: 'Others' lets party members trigger your actions — use carefully."
     }
 
-    private fun drawLeapMenu(draw: MenuDraw, startY: Int): Int {
+    private fun drawLeapLayout(draw: MenuDraw, startY: Int): Int {
         val leap = TickTimers.settings.leap
-        var y = grouped(draw, startY, 3) { rowY, index ->
+        val helpY = pageHelp(draw, startY, "Master switches and card spacing for the leap menu.")
+        var y = grouped(draw, helpY, 3) { rowY, index ->
             when (index) {
-                0 -> toggleRow(draw, rowY, "Enabled", "Master switch for the leap menu and orient center.", leap.enabled, false) {
+                0 -> toggleRow(draw, rowY, "Spirit Leap enabled", "Master switch for every trigger card (dungeon, location, lobby, progress, puzzle, Kuudra and slayer events), the leap menu and orient center.", leap.enabled, false) {
                     TickTimers.updateLeap { it.copy(enabled = !it.enabled) }
                 }
                 1 -> toggleRow(draw, rowY, "Custom menu", "Replace the vanilla / Odin leap GUI.", leap.menuEnabled, false) {
@@ -552,20 +790,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = grouped(draw, y, 2) { rowY, index ->
-            if (index == 0) {
-                val durId = "leap:duration"
-                actionRow(draw, rowY, "Lock seconds", "How long the center card stays armed.", last = false) { cy ->
-                    draw.field(durId, field(durId, leap.durationSeconds.toString()), "10", rightX(48), cy, 48, focused == durId)
-                }
-            } else {
-                val keyId = "leap:keyword"
-                actionRow(draw, rowY, "Keyword", "Party chat must contain this, then at sss / ee2 / healer.", last = true) { cy ->
-                    draw.field(keyId, field(keyId, leap.keyword), "[icantpy]", rightX(96), cy, 96, focused == keyId)
-                }
-            }
-        }
-        y = section(draw, y, "Layout", "Spacing and card positions.")
+        y = section(draw, y + SECTION_GAP, "Layout", "Spacing and card positions.")
         y = grouped(draw, y, 3) { rowY, index ->
             if (index == 0) {
                 val id = "leap:gap"
@@ -584,7 +809,26 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y, "Quick leap", "Left-click Spirit Leap to open its menu and select the oriented target.")
+        return y
+    }
+
+    private fun drawLeapQuickLeap(draw: MenuDraw, startY: Int): Int {
+        val leap = TickTimers.settings.leap
+        val helpY = pageHelp(draw, startY, "Left-click Spirit Leap, lock chat, and the center priority order.")
+        var y = grouped(draw, helpY, 2) { rowY, index ->
+            if (index == 0) {
+                val durId = "leap:duration"
+                actionRow(draw, rowY, "Default target duration", "Seconds a timed leap target stays armed when its card uses the default.", last = false) { cy ->
+                    draw.field(durId, field(durId, leap.durationSeconds.toString()), "10", rightX(48), cy, 48, focused == durId)
+                }
+            } else {
+                val keyId = "leap:keyword"
+                actionRow(draw, rowY, "Keyword", "Party chat must contain this, then at sss / ee2 / healer.", last = true) { cy ->
+                    draw.field(keyId, field(keyId, leap.keyword), "[icantpy]", rightX(96), cy, 96, focused == keyId)
+                }
+            }
+        }
+        y = section(draw, y + SECTION_GAP, "Quick leap", "Left-click Spirit Leap to open its menu and select the oriented target.")
         y = grouped(draw, y, 4) { rowY, index ->
             when (index) {
                 0 -> toggleRow(draw, rowY, "Left-click auto leap", "Uses the oriented target, without moving the cursor.", leap.autoLeapEnabled, false) {
@@ -604,68 +848,14 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y, "Look", "Same knobs as Odin's Leap Menu.")
-        y = grouped(draw, y, 4) { rowY, index ->
-            when (index) {
-                0 -> actionRow(draw, rowY, "Sorting", leap.sortMode.label(), last = false) { cy ->
-                    draw.button("Next", rightX(52), cy, ButtonStyle.PRIMARY) {
-                        TickTimers.updateLeap { it.copy(sortMode = it.sortMode.next()) }
-                    }
-                }
-                1 -> actionRow(draw, rowY, "Scale", "${leap.scale}x", last = false) { cy ->
-                    var x = rightX(0)
-                    listOf(0.8f, 1f, 1.2f, 1.5f).asReversed().forEach { value ->
-                        val label = value.toString()
-                        x -= draw.measure(label, draw.buttonFont) + 24
-                        draw.chip(label, x, cy, leap.scale == value) {
-                            TickTimers.updateLeap { it.copy(scale = value) }
-                        }
-                        x -= 6
-                    }
-                }
-                2 -> toggleRow(draw, rowY, "Color style", "Fill boxes with class color instead of gray.", leap.colorStyle, false) {
-                    TickTimers.updateLeap { it.copy(colorStyle = !it.colorStyle) }
-                }
-                else -> toggleRow(draw, rowY, "Class names only", "Hide player names on the cards.", leap.onlyClass, true) {
-                    TickTimers.updateLeap { it.copy(onlyClass = !it.onlyClass) }
-                }
-            }
-        }
-        y = grouped(draw, y, 1) { rowY, _ ->
-            val id = "leap:opacity"
-            actionRow(draw, rowY, "Card opacity", "0 is invisible, 100 is solid. Used when cards overlap.", last = true) { cy ->
-                var x = rightX(48)
-                listOf(25, 50, 75, 100).asReversed().forEach { value ->
-                    val label = "$value%"
-                    x -= draw.measure(label, draw.buttonFont) + 24
-                    draw.chip(label, x, cy, leap.menuOpacity == value) {
-                        TickTimers.updateLeap { it.copy(menuOpacity = value) }
-                    }
-                    x -= 6
-                }
-                draw.field(id, field(id, leap.menuOpacity.toString()), "100", rightX(48), cy, 48, focused == id)
-            }
-        }
-        y = grouped(draw, y, 4) { rowY, index ->
-            when (index) {
-                0 -> toggleRow(draw, rowY, "Click on release", "Leap when you let go instead of on press.", leap.onRelease, false) {
+        y = grouped(draw, y, 2) { rowY, index ->
+            if (index == 0) {
+                toggleRow(draw, rowY, "Click on release", "Leap when you let go instead of on press.", leap.onRelease, false) {
                     TickTimers.updateLeap { it.copy(onRelease = !it.onRelease) }
                 }
-                1 -> toggleRow(draw, rowY, "Leap announce", "Send the template after you teleport. Own announce is ignored.", leap.leapAnnounce, false) {
+            } else {
+                toggleRow(draw, rowY, "Leap announce", "Send the template after you teleport. Own announce is ignored.", leap.leapAnnounce, true) {
                     TickTimers.updateLeap { it.copy(leapAnnounce = !it.leapAnnounce) }
-                }
-                2 -> toggleRow(draw, rowY, "Lock HUD", "Show who / zone / reason on screen, including the latest door opener.", leap.showLockHud, false) {
-                    TickTimers.updateLeap { it.copy(showLockHud = !it.showLockHud) }
-                }
-                else -> toggleRow(
-                    draw,
-                    rowY,
-                    "Boss death notifier",
-                    "Show the detected boss death for five seconds, before leap resolution.",
-                    leap.showBossDeathNotifier,
-                    true,
-                ) {
-                    TickTimers.updateLeap { it.copy(showBossDeathNotifier = !it.showBossDeathNotifier) }
                 }
             }
         }
@@ -675,7 +865,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 draw.field(annId, field(annId, leap.announceTemplate), LeapChatPatterns.DEFAULT_ANNOUNCE, rightX(220), cy, 220, focused == annId)
             }
         }
-        y = section(draw, y, "Center priority", "Only used when two equal-priority locks overlap.")
+        y = section(draw, y + SECTION_GAP, "Center priority", "Only used when two equal-priority locks overlap.")
         y = grouped(draw, y, LeapOrientSettings.PRIORITY_STATES.size) { rowY, index ->
             val (state, title) = LeapOrientSettings.PRIORITY_STATES[index]
             val rule = leap.preferred(state)
@@ -731,7 +921,81 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y, "Keybinds", "Click Bind, then press a key. Esc clears.")
+        return y
+    }
+
+    private fun drawLeapLook(draw: MenuDraw, startY: Int): Int {
+        val leap = TickTimers.settings.leap
+        val helpY = pageHelp(draw, startY, "Card sorting, scale, and colors for the leap menu.")
+        var y = helpY
+        y = section(draw, y + SECTION_GAP, "Look", "Same knobs as Odin's Leap Menu.")
+        y = grouped(draw, y, 4) { rowY, index ->
+            when (index) {
+                0 -> actionRow(draw, rowY, "Sorting", leap.sortMode.label(), last = false) { cy ->
+                    draw.button("Next", rightX(52), cy, ButtonStyle.PRIMARY) {
+                        TickTimers.updateLeap { it.copy(sortMode = it.sortMode.next()) }
+                    }
+                }
+                1 -> actionRow(draw, rowY, "Scale", "${leap.scale}x", last = false) { cy ->
+                    var x = rightX(0)
+                    listOf(0.8f, 1f, 1.2f, 1.5f).asReversed().forEach { value ->
+                        val label = value.toString()
+                        x -= draw.measure(label, draw.buttonFont) + 24
+                        draw.chip(label, x, cy, leap.scale == value) {
+                            TickTimers.updateLeap { it.copy(scale = value) }
+                        }
+                        x -= 6
+                    }
+                }
+                2 -> toggleRow(draw, rowY, "Color style", "Fill boxes with class color instead of gray.", leap.colorStyle, false) {
+                    TickTimers.updateLeap { it.copy(colorStyle = !it.colorStyle) }
+                }
+                else -> toggleRow(draw, rowY, "Class names only", "Hide player names on the cards.", leap.onlyClass, true) {
+                    TickTimers.updateLeap { it.copy(onlyClass = !it.onlyClass) }
+                }
+            }
+        }
+        y = grouped(draw, y, 1) { rowY, _ ->
+            val id = "leap:opacity"
+            actionRow(draw, rowY, "Card opacity", "0 is invisible, 100 is solid. Used when cards overlap.", last = true) { cy ->
+                var x = rightX(48)
+                listOf(25, 50, 75, 100).asReversed().forEach { value ->
+                    val label = "$value%"
+                    x -= draw.measure(label, draw.buttonFont) + 24
+                    draw.chip(label, x, cy, leap.menuOpacity == value) {
+                        TickTimers.updateLeap { it.copy(menuOpacity = value) }
+                    }
+                    x -= 6
+                }
+                draw.field(id, field(id, leap.menuOpacity.toString()), "100", rightX(48), cy, 48, focused == id)
+            }
+        }
+        y = grouped(draw, y, 2) { rowY, index ->
+            if (index == 0) {
+                toggleRow(draw, rowY, "Lock HUD", "Show who / zone / reason on screen, including the latest door opener.", leap.showLockHud, false) {
+                    TickTimers.updateLeap { it.copy(showLockHud = !it.showLockHud) }
+                }
+            } else {
+                toggleRow(
+                    draw,
+                    rowY,
+                    "Boss death notifier",
+                    "Show the detected boss death for five seconds, before leap resolution.",
+                    leap.showBossDeathNotifier,
+                    true,
+                ) {
+                    TickTimers.updateLeap { it.copy(showBossDeathNotifier = !it.showBossDeathNotifier) }
+                }
+            }
+        }
+        return y
+    }
+
+    private fun drawLeapKeybinds(draw: MenuDraw, startY: Int): Int {
+        val leap = TickTimers.settings.leap
+        val helpY = pageHelp(draw, startY, "Keys that pick a leap target. Click Bind, then press a key.")
+        var y = helpY
+        y = section(draw, y + SECTION_GAP, "Keybinds", "Click Bind, then press a key. Esc clears.")
         y = grouped(draw, y, 2) { rowY, index ->
             if (index == 0) {
                 actionRow(draw, rowY, "Mode", leap.keybindMode.label(), last = false) { cy ->
@@ -766,8 +1030,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun drawLeapDebug(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Simulate the live party-chat and boss event pipeline.")
         if (!TickTimers.settings.debugMode && !LeapOrient.debugActive()) {
-            return note(draw, startY, "Turn on debug mode to simulate the live event pipeline.")
+            return note(draw, helpY, "Turn on debug mode to simulate the live event pipeline.")
         }
         val leap = TickTimers.settings.leap
         var bossDropdown: Triple<Int, Int, Int>? = null
@@ -812,9 +1077,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                     val runW = draw.button("Run", rightX(52), cy, ButtonStyle.PRIMARY) {
                         toast(LeapOrient.simulateBossToken(debugBossToken))
                     }
-                    val selectW = draw.measure("$label ▾", draw.buttonFont) + 20
+                    val selectW = draw.measure(label, draw.buttonFont) + 48
                     val selectX = rightX(52) - runW - 8 - selectW
-                    draw.button("$label ▾", selectX, cy, ButtonStyle.GHOST) {
+                    draw.selectButton(label, selectX, cy, selectW, LEAP_ROW_CONTROL_HEIGHT) {
                         openDebugDropdown = if (openDebugDropdown == "boss") null else "boss"
                     }
                     bossDropdown = Triple(selectX, cy + 24, selectW)
@@ -840,9 +1105,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                             },
                         )
                     }
-                    val selectW = draw.measure("$label ▾", draw.buttonFont) + 20
+                    val selectW = draw.measure(label, draw.buttonFont) + 48
                     val selectX = rightX(52) - runW - 8 - selectW
-                    draw.button("$label ▾", selectX, cy, ButtonStyle.GHOST) {
+                    draw.selectButton(label, selectX, cy, selectW, LEAP_ROW_CONTROL_HEIGHT) {
                         openDebugDropdown = if (openDebugDropdown == "party") null else "party"
                     }
                     partyDropdown = Triple(selectX, cy + 24, selectW)
@@ -865,7 +1130,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y + 6, "Chat diagnostics", "Control the live party-chat trigger lines shown on the debug HUD.")
+        y = section(draw, y + SECTION_GAP, "Chat diagnostics", "Control the live party-chat trigger lines shown on the debug HUD.")
         y = grouped(draw, y, 3) { rowY, index ->
             when (index) {
                 0 -> toggleRow(
@@ -933,6 +1198,114 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
+        y = drawLocationBlock(draw, y + SECTION_GAP)
+        y = drawFireBlock(draw, y + SECTION_GAP)
+        y = drawRecentEventsBlock(draw, y + SECTION_GAP)
+        return y
+    }
+
+    /** Live island, floor and tab counts as read by the location service. */
+    private fun drawLocationBlock(draw: MenuDraw, startY: Int): Int {
+        val loc = SkyblockLocation.snapshot
+        val stats = loc.stats
+        var y = section(draw, startY, "Location", "Tab list and sidebar, sampled every half second. No packets are sent.")
+        y = grouped(draw, y, 4) { rowY, index ->
+            when (index) {
+                0 -> actionRow(draw, rowY, "Island", loc.islandLabel.ifBlank { "unknown" }, last = false) { }
+                1 -> actionRow(
+                    draw,
+                    rowY,
+                    "Raw area / subarea",
+                    "${loc.rawArea.ifBlank { "-" }} / ${loc.subarea.ifBlank { "-" }}",
+                    last = false,
+                ) { }
+                2 -> actionRow(
+                    draw,
+                    rowY,
+                    "Floor / in dungeon",
+                    "${loc.floor.name.takeIf { it != "NONE" } ?: "-"} / ${loc.inDungeon} · SkyBlock ${loc.onSkyblock}",
+                    last = false,
+                ) { }
+                else -> actionRow(
+                    draw,
+                    rowY,
+                    "Phase / tab stats",
+                    "P-phase ${LeapGameState.currentId()} · secrets ${stats.secrets ?: "-"} · crypts ${stats.crypts ?: "-"} · " +
+                        "deaths ${stats.deaths ?: "-"} · puzzles ${stats.puzzles ?: "-"} · cleared ${stats.cleared?.let { "$it%" } ?: "-"}",
+                    last = true,
+                ) { }
+            }
+        }
+        return y
+    }
+
+    /** Fires one trigger event, either through normal card matching or to every card for that event. */
+    private fun drawFireBlock(draw: MenuDraw, startY: Int): Int {
+        val events = LeapTriggerEvent.entries
+        val headers = leapEventHeaders(events)
+        val labels = events.map { it.label() }
+        var y = section(draw, startY, "Fire a trigger", "Runs the event as if the game produced it. Value is the captured name, color, island or class.")
+        y = grouped(draw, y, 2) { rowY, index ->
+            when (index) {
+                0 -> actionRow(draw, rowY, "Event and value", "Value is optional; the event label is used when blank.", last = false) { cy ->
+                    val shown = debugFireEvent.label()
+                    val selectW = draw.measure(shown, draw.buttonFont).coerceAtLeast(120) + 48
+                    val valueW = 140
+                    val selectX = rightX(0) - selectW - 8 - valueW
+                    draw.field(
+                        "debug:fire:value",
+                        field("debug:fire:value"),
+                        "value",
+                        selectX + selectW + 8,
+                        cy,
+                        valueW,
+                        focused == "debug:fire:value",
+                        LEAP_ROW_CONTROL_HEIGHT,
+                    )
+                    leapSelect(
+                        draw,
+                        "debug-fire",
+                        shown,
+                        labels,
+                        events.indexOf(debugFireEvent),
+                        LayoutRect(selectX, cy, selectW, LEAP_ROW_CONTROL_HEIGHT),
+                        headers,
+                    ) { choice -> debugFireEvent = events[choice] }
+                }
+                else -> actionRow(draw, rowY, "Fire", "Honors card filters, or ignores match text for every card.", last = true) { cy ->
+                    val value = field("debug:fire:value")
+                    val all = draw.button("Ignore filters", rightX(120), cy, ButtonStyle.GHOST) {
+                        toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = false))
+                    }
+                    draw.button("Fire", rightX(120) - all - 8, cy, ButtonStyle.PRIMARY) {
+                        toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = true))
+                    }
+                }
+            }
+        }
+        return y
+    }
+
+    /** Newest-first history of detected events, recorded whether or not a card matched. */
+    private fun drawRecentEventsBlock(draw: MenuDraw, startY: Int): Int {
+        val recent = LeapEventLog.newestFirst()
+        var y = section(draw, startY, "Recent events", "Last ${LeapEventLog.newestFirst().size.coerceAtMost(30)} detected events, newest first.")
+        if (recent.isEmpty()) return note(draw, y, "No events detected yet.")
+        y = grouped(draw, y, recent.size + 1) { rowY, index ->
+            if (index == 0) {
+                actionRow(draw, rowY, "Log", "${recent.size} shown", last = false) { cy ->
+                    draw.button("Clear", rightX(52), cy, ButtonStyle.GHOST) {
+                        LeapEventLog.clear()
+                        toast("event log cleared")
+                    }
+                }
+            } else {
+                val entry = recent[index - 1]
+                val time = "%02d:%02d".format((entry.timeMs / 60_000L) % 60, (entry.timeMs / 1000L) % 60)
+                val detail = "${entry.value} · ${entry.source} · ${entry.cardsFired} card(s)"
+                actionRow(draw, rowY, "$time  ${entry.event.label()}", detail, last = index == recent.size) { }
+            }
+        }
         return y
     }
 
@@ -948,6 +1321,16 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private fun leapCardKey(card: LeapTriggerCard): String =
         card.triggers.map { it.presetId ?: it.id }.sorted().joinToString("|")
 
+    /** Per-card state shared by the row controls while one trigger card is drawn. */
+    private class LeapCardEdit(
+        val draw: MenuDraw,
+        val card: LeapTriggerCard,
+        val latest: () -> LeapOrientTrigger,
+        val save: (LeapOrientTrigger) -> Unit,
+    ) {
+        val id: String get() = card.trigger.id
+    }
+
     private fun leapTriggerBlock(draw: MenuDraw, startY: Int, triggerCard: LeapTriggerCard): Int {
         val trigger = triggerCard.trigger
         fun latest() = TickTimers.settings.leap.triggers.firstOrNull { it.id == trigger.id } ?: trigger
@@ -957,261 +1340,812 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 else current.upsertTrigger(next)
             }
         }
-        val clock = trigger.event == LeapTriggerEvent.CLOCK
-        val chain = trigger.event == LeapTriggerEvent.LEAP_CHAIN
-        val leaped = trigger.event == LeapTriggerEvent.LEAPED_TO ||
-            trigger.event == LeapTriggerEvent.SELF_LEAP ||
-            chain
-        val groupedPreset = trigger.isPreset && triggerCard.triggers.size > 1
-        val y = startY
         val left = innerLeft()
         val width = innerWidth()
-        val cardKey = leapCardKey(triggerCard)
-        val expanded = cardKey in ConfigUiSession.leapExpandedCards
-        val cardH = leapTriggerCardHeight(trigger, expanded)
-        card(draw, left, y, width, cardH)
-        val deleteLabel = if (trigger.isPreset) "Off" else "Delete"
-        val deleteW = draw.measure(deleteLabel, draw.buttonFont) + 20
-        val deleteX = left + width - deleteW - 14
-        val toggleX = deleteX - 50
-        val titleX = left + 14
-        val titleMax = (toggleX - titleX - 8).coerceAtLeast(40)
-        val chevron = if (expanded) "▾ " else "▸ "
-        draw.clickable(left, y, (toggleX - left - 8).coerceAtLeast(1), if (expanded) 52 else cardH) {
-            if (expanded) ConfigUiSession.leapExpandedCards.remove(cardKey)
-            else ConfigUiSession.leapExpandedCards.add(cardKey)
-        }
+        val expanded = leapCardKey(triggerCard) in ConfigUiSession.leapExpandedCards
+        val rows = LeapTriggerLayout.rows(leapCardShape(triggerCard))
+        val cardH = LeapTriggerLayout.cardHeight(expanded, rows.size)
+        if (trigger.id == pendingRevealId) revealLeapCard(startY)
+        card(draw, left, startY, width, cardH)
+        val edit = LeapCardEdit(draw, triggerCard, ::latest, ::save)
+        leapCardHeader(edit, startY, cardH, expanded)
         if (expanded) {
-            val chevronW = draw.measure(chevron, draw.microFont)
-            draw.text(chevron.trimEnd(), left + 14, y + 14, draw.palette.tertiary, draw.microFont)
-            val eventOptions = LeapTriggerEvent.entries.map { it.label() }
-            leapSelect(
-                draw,
-                "leap-select:${trigger.id}:event",
-                "Trigger",
-                eventOptions,
-                LeapTriggerEvent.entries.indexOf(trigger.event),
-                left + 14 + chevronW,
-                y + 10,
-                (toggleX - left - 28 - chevronW).coerceAtLeast(140),
-            ) { index -> save(syncTriggerEvent(latest(), LeapTriggerEvent.entries[index])) }
-        } else {
             draw.text(
-                draw.fit("$chevron${trigger.title()}", titleMax, draw.smallFont),
-                titleX,
-                y + 14,
-                draw.palette.text,
-                draw.smallFont,
-            )
-        }
-        draw.toggle(toggleX, y + 10, trigger.enabled) {
-            TickTimers.updateLeap { LeapTriggerCards.setEnabled(it, triggerCard, !latest().enabled) }
-        }
-        draw.button(deleteLabel, deleteX, y + 10, ButtonStyle.DANGER) {
-            TickTimers.updateLeap {
-                if (trigger.isPreset) LeapTriggerCards.setEnabled(it, triggerCard, false) else it.removeTrigger(trigger.id)
-            }
-        }
-        draw.text(draw.fit(trigger.subtitle(), width - 40, draw.microFont), left + 14, y + 38, draw.palette.secondary, draw.microFont)
-        if (!expanded) return y + cardH + 10
-        draw.text(draw.fit(leapEventHelp(trigger.event), width - 28, draw.microFont), left + 14, y + 54,
-            draw.palette.tertiary, draw.microFont)
-        var row = y + 70
-        if (clock) {
-            val spec = latest().clock ?: ClockSpec.stormElapsed(35.0)
-            val clockW = leapSelect(
-                draw,
-                "leap-select:${trigger.id}:clock",
-                "Timer",
-                TimerClock.entries.map { it.label() },
-                TimerClock.entries.indexOf(spec.clock),
-                left + 14,
-                row,
-                180,
-            ) { index ->
-                val seconds = TimerTrigger.parseSeconds(spec.secondsInput()) ?: 35.0
-                save(latest().copy(clock = ClockSpec.forSeconds(TimerClock.entries[index], seconds)))
-            }
-            val secsId = "lt:${trigger.id}:secs"
-            draw.field(secsId, field(secsId, spec.secondsInput()), "seconds", left + 20 + clockW, row, 66, focused == secsId)
-            leapSelect(
-                draw,
-                "leap-select:${trigger.id}:metric",
-                "Metric",
-                ClockMetric.entries.map { it.label() },
-                ClockMetric.entries.indexOf(spec.metric),
-                left + 20 + clockW + 72,
-                row,
-                (width - clockW - 92).coerceAtLeast(150),
-            ) { index -> save(latest().copy(clock = spec.copy(metric = ClockMetric.entries[index]))) }
-            row += 28
-            leapSelect(
-                draw,
-                "leap-select:${trigger.id}:crossing",
-                "When",
-                ClockCrossing.entries.map { it.label() },
-                ClockCrossing.entries.indexOf(spec.crossing),
-                left + 14,
-                row,
-                width - 28,
-            ) { index -> save(latest().copy(clock = spec.copy(crossing = ClockCrossing.entries[index]))) }
-            row += 28
-        } else if (leaped) {
-            val matchTokens = if (chain) {
-                listOf("any").plus(LeapDungeonClass.PLAYABLE.map { it.shortName.lowercase() })
-            } else {
-                listOf("self", "any").plus(LeapDungeonClass.PLAYABLE.map { it.shortName.lowercase() })
-            }
-            val matchLabels = matchTokens.map { token ->
-                when (token) {
-                    "self" -> "Me: I leaped"
-                    "any" -> "Anyone"
-                    else -> "${LeapDungeonClass.fromToken(token)?.displayName ?: token} leaped"
-                }
-            }
-            leapSelect(
-                draw,
-                "leap-select:${trigger.id}:match",
-                "When",
-                matchLabels,
-                matchTokens.indexOfFirst { it.equals(trigger.match, ignoreCase = true) }.coerceAtLeast(0),
-                left + 14,
-                row,
-                width - 28,
-            ) { index -> save(latest().copy(match = matchTokens[index])) }
-            row += 28
-            if (chain) {
-                val delayId = "lt:${trigger.id}:delay"
-                val holdId = "lt:${trigger.id}:hold"
-                draw.text("After leap", left + 14, row + 4, draw.palette.secondary, draw.microFont)
-                draw.field(
-                    delayId,
-                    field(delayId, latest().chainDelaySeconds.toString()),
-                    "0",
-                    left + 92,
-                    row,
-                    44,
-                    focused == delayId,
-                )
-                draw.text("s, hold", left + 146, row + 4, draw.palette.secondary, draw.microFont)
-                draw.field(
-                    holdId,
-                    field(
-                        holdId,
-                        if (latest().chainDurationSeconds > 0) latest().chainDurationSeconds.toString() else "",
-                    ),
-                    "global",
-                    left + 190,
-                    row,
-                    52,
-                    focused == holdId,
-                )
-                draw.text("s", left + 248, row + 4, draw.palette.secondary, draw.microFont)
-                row += 28
-            }
-        }
-        val actorOptions = listOf("Any class") + LeapDungeonClass.PLAYABLE.map { it.displayName }
-        if (groupedPreset) {
-            draw.text(
-                draw.fit("For: ${triggerCard.actorLabel()}", width - 28, draw.microFont),
-                left + 14,
-                row + 4,
+                draw.fit(leapHelpText(trigger), width - 2 * LeapTriggerLayout.SIDE_PAD, draw.microFont),
+                left + LeapTriggerLayout.SIDE_PAD,
+                startY + LeapTriggerLayout.HELP_TOP,
                 draw.palette.tertiary,
                 draw.microFont,
             )
-        } else {
-            leapSelect(
-                draw,
-                "leap-select:${trigger.id}:actor",
-                "Only when",
-                actorOptions,
-                latest().forClass.takeIf { it.isReal() }?.let { LeapDungeonClass.PLAYABLE.indexOf(it) + 1 } ?: 0,
-                left + 14,
-                row,
-                width - 28,
-            ) { index ->
-                val clazz = if (index == 0) LeapDungeonClass.EMPTY else LeapDungeonClass.PLAYABLE[index - 1]
-                save(latest().copy(forClass = clazz))
+            rows.forEachIndexed { index, row ->
+                val rect = LeapTriggerLayout.rowRect(left, startY, width, index)
+                drawLeapRow(edit, row, if (row.indented) LeapTriggerLayout.indentedRect(rect) else rect)
             }
         }
-        row += 28
-        draw.text("Active filters", left + 14, row + 4, draw.palette.secondary, draw.microFont)
-        row += 22
-        val half = ((width - 34) / 2).coerceAtLeast(140)
-        val phaseOptions = listOf("Any phase", "P1", "P2", "P3", "P4", "P5")
-        val phases = listOf(LeapPhase.ANY, LeapPhase.P1, LeapPhase.P2, LeapPhase.P3, LeapPhase.P4, LeapPhase.P5)
-        leapSelect(draw, "leap-select:${trigger.id}:phase", "Phase", phaseOptions, phases.indexOf(latest().phase).coerceAtLeast(0), left + 14, row, half) { index ->
-            save(latest().copy(phase = phases[index]))
-        }
-        val floors = listOf(LeapFloor.ANY, LeapFloor.F7, LeapFloor.M7)
-        leapSelect(draw, "leap-select:${trigger.id}:floor", "Floor", listOf("Any floor", "F7", "M7"), floors.indexOf(latest().floor).coerceAtLeast(0), left + 20 + half, row, half) { index ->
-            save(latest().copy(floor = floors[index]))
-        }
-        row += 28
-        val routes = listOf(LeapStormRoute.ANY, LeapStormRoute.PY, LeapStormRoute.GY)
-        leapSelect(draw, "leap-select:${trigger.id}:route", "Route", listOf("Any route", "PY", "GY"), routes.indexOf(latest().route).coerceAtLeast(0), left + 14, row, half) { index ->
-            save(latest().copy(route = routes[index]))
-        }
-        val sections = listOf("Any section", "S1", "S2", "S3", "S4")
-        leapSelect(draw, "leap-select:${trigger.id}:section", "Section", sections, latest().section.coerceIn(0, 4), left + 20 + half, row, half) { index ->
-            save(latest().copy(section = index))
-        }
-        row += 28
-        val target = latest().target
-        val targetW = leapSelect(draw, "leap-select:${trigger.id}:target", "Center on", LeapCenterTarget.entries.map { it.label() }, LeapCenterTarget.entries.indexOf(target), left + 14, row, width - 28) { index ->
-            save(latest().copy(target = LeapCenterTarget.entries[index]))
-        }
-        when (target) {
-            LeapCenterTarget.CLASS -> {
-                val classes = LeapDungeonClass.PLAYABLE
-                leapSelect(draw, "leap-select:${trigger.id}:target-value", "Class", classes.map { it.displayName }, classes.indexOf(LeapDungeonClass.fromToken(latest().targetValue)).coerceAtLeast(0), left + 20 + targetW, row, (width - targetW - 34).coerceAtLeast(150)) { index ->
-                    save(latest().copy(targetValue = classes[index].name.lowercase()))
-                }
-            }
-            LeapCenterTarget.NAME -> {
-                val nameId = "lt:${trigger.id}:name"
-                draw.field(nameId, field(nameId, latest().targetValue), "player", left + 20 + targetW, row, 110, focused == nameId)
-            }
-            LeapCenterTarget.SENDER, LeapCenterTarget.LEAPED_TO, LeapCenterTarget.LEAPED_FROM -> {
-                draw.text("Uses the player captured by the event.", left + 20 + targetW, row + 4, draw.palette.secondary, draw.microFont)
-            }
-        }
-        row += 28
-        val zoneId = "lt:${trigger.id}:zone"
-        val reasonId = "lt:${trigger.id}:reason"
-        leapSelect(
-            draw,
-            "leap-select:${trigger.id}:requires",
-            "Requires prior leap",
-            listOf("None") + LeapDungeonClass.PLAYABLE.map { it.displayName },
-            latest().requiresTargetClass.takeIf { it.isReal() }
-                ?.let { LeapDungeonClass.PLAYABLE.indexOf(it) + 1 } ?: 0,
-            left + 14,
-            row,
-            width - 28,
-        ) { index ->
-            val required = if (index == 0) LeapDungeonClass.EMPTY else LeapDungeonClass.PLAYABLE[index - 1]
-            save(latest().copy(requiresTargetClass = required))
-        }
-        row += 28
-        val zoneW = 72
-        val reasonW = (width - 108).coerceAtLeast(1)
-        draw.field(zoneId, field(zoneId, latest().zone), "SS", left + 14, row, zoneW, focused == zoneId)
-        draw.field(reasonId, field(reasonId, latest().reason), "reason", left + 94, row, reasonW, focused == reasonId)
-        return y + cardH + 10
+        return startY + cardH + LeapTriggerLayout.CARD_GAP
     }
 
-    private fun leapTriggerCardHeight(trigger: LeapOrientTrigger, expanded: Boolean): Int {
-        if (!expanded) return 58
-        var height = 80 // header, subtitle, and event explanation
-        height += if (trigger.event == LeapTriggerEvent.CLOCK) 56 else 28
-        if (trigger.event == LeapTriggerEvent.LEAP_CHAIN) height += 28
-        height += 28 // class restriction
-        height += 78 // filter heading and two rows
-        height += 28 // center target
-        height += 28 // prerequisite
-        height += 28 // zone and reason
-        return height + 12
+    private fun leapCardShape(card: LeapTriggerCard): LeapCardShape {
+        val trigger = card.trigger
+        val chain = trigger.event == LeapTriggerEvent.LEAP_CHAIN
+        return LeapCardShape(
+            clock = trigger.event == LeapTriggerEvent.CLOCK,
+            health = trigger.event == LeapTriggerEvent.HEALTH_LOW,
+            threshold = trigger.event.usesThreshold(),
+            chat = trigger.event == LeapTriggerEvent.CHAT_MESSAGE,
+            chatFromPlayer = trigger.chatSender == ChatSender.PLAYER,
+            valueMatch = trigger.event in LeapOrientEngine.VALUE_FILTERED_EVENTS,
+            namedMatch = trigger.event in LeapOrientEngine.NAME_FILTERED_EVENTS,
+            colorMatch = trigger.event in LeapOrientEngine.COLOR_FILTERED_EVENTS,
+            leaped =trigger.event == LeapTriggerEvent.LEAPED_TO || trigger.event == LeapTriggerEvent.SELF_LEAP || chain,
+            chain = chain,
+            stepKinds = trigger.steps.map { it.kind },
+            sortArmedSteps = trigger.steps.withIndex()
+                .filter { (_, step) -> LeapAutoRouter.isArmedSort(step) }
+                .map { (index, _) -> index }
+                .toSet(),
+            groupedPreset = trigger.isPreset && card.triggers.size > 1,
+            centerTarget = trigger.target,
+            timedHold = trigger.holdMode == LeapHoldMode.TIMED,
+            timedFollowSteps = trigger.steps.withIndex()
+                .filter { (_, step) -> step.kind == LeapAutoKind.FOLLOWUP_LEAP && step.followHoldMode == LeapHoldMode.TIMED }
+                .map { (index, _) -> index }
+                .toSet(),
+            followTargets = trigger.steps.withIndex()
+                .filter { (_, step) -> step.kind == LeapAutoKind.FOLLOWUP_LEAP }
+                .associate { (index, step) -> index to step.followTarget },
+            markPlayerSteps = trigger.steps.withIndex()
+                .filter { (_, step) -> step.kind == LeapAutoKind.MARK_PLAYER && step.markTargetsPlayer() }
+                .map { (index, _) -> index }
+                .toSet(),
+            markArrowSteps = trigger.steps.withIndex()
+                .filter { (_, step) -> step.kind == LeapAutoKind.MARK_PLAYER && LeapMarkRouter.styleOf(step) == MarkerStyle.ARROW }
+                .map { (index, _) -> index }
+                .toSet(),
+        )
+    }
+
+    /** Scrolls a freshly added card to the top of the list. [cardY] is its drawn screen y. */
+    private fun revealLeapCard(cardY: Int) {
+        pendingRevealId = null
+        scroll = LeapTriggerLayout.revealScroll(cardY - metrics.viewTop + scroll)
+    }
+
+    private fun leapCardHeader(edit: LeapCardEdit, y: Int, cardH: Int, expanded: Boolean) {
+        val draw = edit.draw
+        val trigger = edit.card.trigger
+        val left = innerLeft()
+        val deleteWidth = draw.measure("Delete", draw.buttonFont) + 28
+        val offWidth = if (trigger.isPreset) draw.measure("Off", draw.buttonFont) + 28 else 0
+        val testWidth = draw.measure("Test", draw.buttonFont) + 28
+        val header = LeapTriggerLayout.header(left, y, innerWidth(), deleteWidth, offWidth, testWidth)
+        val clickHeight = if (expanded) LeapTriggerLayout.HEADER_TOP + LeapTriggerLayout.HEADER_HEIGHT else cardH
+        draw.clickable(left, y, header.toggle.x - left - 8, clickHeight) {
+            toggleLeapCard(edit.card, expanded)
+        }
+        draw.chevron(
+            header.chevron.x + header.chevron.w / 2,
+            header.chevron.y + header.chevron.h / 2,
+            LEAP_CHEVRON_SIZE,
+            expanded,
+            draw.palette.tertiary,
+        )
+        val title = LeapTriggerLayout.plainText(if (expanded) trigger.summary(statsPresetLabels()) else trigger.title())
+        draw.text(draw.fit(title, header.titleWidth, draw.smallFont), header.titleX, y + 14, draw.palette.text, draw.smallFont)
+        if (!expanded) {
+            val subtitleWidth = innerWidth() - (header.titleX - left) - LeapTriggerLayout.SIDE_PAD
+            draw.text(
+                draw.fit(LeapTriggerLayout.plainText(trigger.subtitle(statsPresetLabels())), subtitleWidth, draw.microFont),
+                header.titleX,
+                y + 38,
+                draw.palette.secondary,
+                draw.microFont,
+            )
+        }
+        draw.toggle(header.toggle.x, header.toggle.y, trigger.enabled) {
+            TickTimers.updateLeap { LeapTriggerCards.setEnabled(it, edit.card, !edit.latest().enabled) }
+        }
+        header.off?.let { off ->
+            draw.button("Off", off.x, off.y, ButtonStyle.GHOST) {
+                TickTimers.updateLeap { LeapTriggerCards.setEnabled(it, edit.card, false) }
+            }
+        }
+        header.test?.let { test ->
+            draw.button("Test", test.x, test.y, ButtonStyle.GHOST) {
+                // Same close path as Esc; the auto queue waits for the screen to clear before the steps start.
+                onClose()
+                LeapOrient.testCard(edit.card.triggers.map { member ->
+                    TickTimers.settings.leap.triggers.firstOrNull { it.id == member.id } ?: member
+                })
+            }
+        }
+        draw.button("Delete", header.delete.x, header.delete.y, ButtonStyle.DANGER) {
+            TickTimers.updateLeap {
+                if (trigger.isPreset) LeapTriggerCards.deletePresets(it, edit.card) else it.removeTrigger(trigger.id)
+            }
+        }
+    }
+
+    private fun toggleLeapCard(card: LeapTriggerCard, expanded: Boolean) {
+        val key = leapCardKey(card)
+        if (expanded) ConfigUiSession.leapExpandedCards.remove(key) else ConfigUiSession.leapExpandedCards.add(key)
+    }
+
+    private fun drawLeapRow(edit: LeapCardEdit, slot: LeapCardSlot, rect: LayoutRect) {
+        val draw = edit.draw
+        val label = LeapTriggerLayout.labelRect(rect)
+        val labelColor = if (slot.row == LeapCardRow.CHAT_TEXT && chatRegexInvalid(edit.latest())) {
+            draw.palette.danger
+        } else {
+            draw.palette.secondary
+        }
+        draw.text(
+            draw.fit(leapRowLabel(edit, slot), label.w, draw.smallFont),
+            label.x,
+            label.y + (label.h - draw.lineHeight(draw.smallFont)) / 2,
+            labelColor,
+            draw.smallFont,
+        )
+        val control = LeapTriggerLayout.controlRect(rect)
+        when (slot.row) {
+            LeapCardRow.TRIGGER, LeapCardRow.MATCH, LeapCardRow.CHAIN_DELAY, LeapCardRow.HOLD_MODE, LeapCardRow.HOLD_DURATION,
+            LeapCardRow.HOLD_LOCK, LeapCardRow.HEALTH_BELOW,
+            LeapCardRow.THRESHOLD ->
+                drawTimingRow(edit, slot.row, control)
+            LeapCardRow.CHAT_SENDER, LeapCardRow.CHAT_PLAYER, LeapCardRow.CHAT_CHANNEL, LeapCardRow.CHAT_MODE,
+            LeapCardRow.CHAT_TEXT, LeapCardRow.CHAT_COOLDOWN -> drawChatRow(edit, slot.row, control)
+            LeapCardRow.STEP -> drawStepRow(edit, slot.step, control)
+            LeapCardRow.ADD_STEP -> drawAddStepRow(edit, control)
+            LeapCardRow.SORT_ARMED, LeapCardRow.SORT_LOCK, LeapCardRow.SORT_REOPEN, LeapCardRow.SORT_ARM_TIMEOUT ->
+                drawSortOptionRow(edit, slot.row, slot.step, control)
+            LeapCardRow.MARK_BY, LeapCardRow.MARK_TARGET_CLASS, LeapCardRow.MARK_TARGET_PLAYER, LeapCardRow.MARK_STYLE,
+            LeapCardRow.MARK_COLOR, LeapCardRow.MARK_FOR, LeapCardRow.MARK_SHOW_NAME, LeapCardRow.MARK_OPACITY,
+            LeapCardRow.MARK_BRIGHTNESS,
+            LeapCardRow.MARK_SIZE, LeapCardRow.MARK_HEIGHT, LeapCardRow.MARK_PULSE,
+            LeapCardRow.MARK_THROUGH, LeapCardRow.MARK_SHAPE, LeapCardRow.MARK_SPIN, LeapCardRow.MARK_BOB,
+            LeapCardRow.MARK_PLAYER_GLOW, LeapCardRow.MARK_MARKER_GLOW ->
+                drawMarkRow(edit, slot.row, slot.step, control)
+            LeapCardRow.FOLLOW_CENTER, LeapCardRow.FOLLOW_CLASS, LeapCardRow.FOLLOW_PLAYER, LeapCardRow.FOLLOW_HOLD_MODE,
+            LeapCardRow.FOLLOW_HOLD_DURATION, LeapCardRow.FOLLOW_HOLD_LOCK, LeapCardRow.FOLLOW_WITHIN ->
+                drawFollowRow(edit, slot.row, slot.step, control)
+            LeapCardRow.TIMER, LeapCardRow.SECONDS, LeapCardRow.METRIC, LeapCardRow.CLOCK_WHEN ->
+                drawClockRow(edit, slot.row, control)
+            else -> drawFilterRow(edit, slot.row, control)
+        }
+    }
+
+    /** Action rows are numbered in run order; the add row is labelled only when the card has no actions yet. */
+    private fun leapRowLabel(edit: LeapCardEdit, slot: LeapCardSlot): String = when (slot.row) {
+        LeapCardRow.STEP -> if (edit.latest().steps.getOrNull(slot.step)?.kind == LeapAutoKind.FOLLOWUP_LEAP) {
+            "Then (after leaping)"
+        } else {
+            "${slot.step + 1}."
+        }
+        LeapCardRow.ADD_STEP -> if (slot.step == 0) slot.row.label else ""
+        else -> slot.row.label
+    }
+
+    private fun drawTimingRow(edit: LeapCardEdit, row: LeapCardRow, c: LayoutRect) {
+        val trigger = edit.latest()
+        when (row) {
+            LeapCardRow.TRIGGER -> {
+                val events = LeapTriggerEvent.entries
+                leapSelectRow(edit, row, c, events.map { it.label() }, events.indexOf(trigger.event), leapEventHeaders(events)) { index ->
+                    edit.save(syncTriggerEvent(edit.latest(), events[index]))
+                }
+            }
+            LeapCardRow.MATCH -> drawMatchRow(edit, c)
+            LeapCardRow.HEALTH_BELOW -> {
+                val levels = (LeapHealthHysteresis.MIN_PERCENT..LeapHealthHysteresis.MAX_PERCENT step 10).toList()
+                leapSelectRow(edit, row, c, levels.map { "$it%" }, levels.indexOf(trigger.healthBelowPercent).coerceAtLeast(0)) { index ->
+                    edit.save(edit.latest().copy(healthBelowPercent = levels[index]))
+                }
+            }
+            LeapCardRow.THRESHOLD -> {
+                val levels = LeapTriggerEventMenu.thresholdLevels(trigger.event)
+                val selected = levels.indexOf(trigger.threshold).coerceAtLeast(0)
+                val options = levels.map { LeapTriggerEventMenu.thresholdLabel(trigger.event, it) }
+                leapSelectRow(edit, row, c, options, selected) { index ->
+                    edit.save(edit.latest().copy(threshold = levels[index]))
+                }
+            }
+            LeapCardRow.CHAIN_DELAY -> leapField(edit, "lt:${edit.id}:delay", trigger.chainDelaySeconds.toString(), "0", c)
+            LeapCardRow.HOLD_MODE -> {
+                val modes = LeapHoldMode.entries
+                leapSelectRow(edit, row, c, modes.map { it.label() }, modes.indexOf(trigger.holdMode)) { index ->
+                    edit.save(edit.latest().copy(holdMode = modes[index]))
+                }
+            }
+            LeapCardRow.HOLD_DURATION -> drawHoldDurationRow(edit, c)
+            else -> drawHoldLockRow(edit, c)
+        }
+    }
+
+    /** "Default (10s)" first, then the fixed choices. A saved value outside the choices is listed too. */
+    private fun drawHoldDurationRow(edit: LeapCardEdit, c: LayoutRect) {
+        val trigger = edit.latest()
+        val global = TickTimers.settings.leap.durationSeconds
+        val choices = (LeapHoldSpec.CHOICES_SECONDS + trigger.holdSeconds).filter { it > 0 }.distinct().sorted()
+        val options = listOf("Default (${global}s)") + choices.map { "${it}s" }
+        val selected = if (trigger.holdSeconds <= 0) 0 else choices.indexOf(trigger.holdSeconds) + 1
+        leapSelectRow(edit, LeapCardRow.HOLD_DURATION, c, options, selected) { index ->
+            val seconds = if (index == 0) 0 else choices[index - 1]
+            edit.save(edit.latest().copy(holdSeconds = seconds, chainDurationSeconds = 0))
+        }
+    }
+
+    /** Toggle with a caption that explains what the lock does. */
+    private fun drawHoldLockRow(edit: LeapCardEdit, c: LayoutRect) {
+        val draw = edit.draw
+        val on = edit.latest().holdLocked
+        val caption = if (on) "Other triggers can't replace this target while it's active" else "Off: other triggers can replace it"
+        val toggleY = c.y + (c.h - TOGGLE_HEIGHT) / 2
+        draw.toggle(c.x, toggleY, on) { edit.save(edit.latest().let { it.copy(holdLocked = !it.holdLocked) }) }
+        draw.text(
+            draw.fit(caption, c.w - TOGGLE_WIDTH - 8, draw.smallFont),
+            c.x + TOGGLE_WIDTH + 8,
+            c.y + (c.h - draw.lineHeight(draw.smallFont)) / 2,
+            draw.palette.secondary,
+            draw.smallFont,
+        )
+    }
+
+    /** A regex match text that does not compile. Only checked for the Regex mode. */
+    private fun chatRegexInvalid(trigger: LeapOrientTrigger): Boolean =
+        trigger.chatMode == ChatTextMode.REGEX && !ChatMessageMatch.validRegex(trigger.chatText)
+
+    /** Cooldown label such as "0.5s" or "2s". */
+    private fun chatCooldownLabel(ms: Int): String =
+        if (ms % 1000 == 0) "${ms / 1000}s" else "${ms / 1000.0}s"
+
+    /** Rows of a CHAT_MESSAGE card: sender, optional player name, channel, match mode, text and cooldown. */
+    private fun drawChatRow(edit: LeapCardEdit, row: LeapCardRow, c: LayoutRect) {
+        val trigger = edit.latest()
+        when (row) {
+            LeapCardRow.CHAT_SENDER -> {
+                val senders = ChatSender.entries
+                leapSelectRow(edit, row, c, senders.map { it.label }, senders.indexOf(trigger.chatSender)) { index ->
+                    edit.save(edit.latest().copy(chatSender = senders[index]))
+                }
+            }
+            LeapCardRow.CHAT_PLAYER -> leapField(edit, "lt:${edit.id}:chatPlayer", trigger.chatPlayer, "player name", c)
+            LeapCardRow.CHAT_CHANNEL -> {
+                val channels = ChatChannel.entries
+                leapSelectRow(edit, row, c, channels.map { it.label }, channels.indexOf(trigger.chatChannel)) { index ->
+                    edit.save(edit.latest().copy(chatChannel = channels[index]))
+                }
+            }
+            LeapCardRow.CHAT_MODE -> {
+                val modes = ChatTextMode.entries
+                leapSelectRow(edit, row, c, modes.map { it.label }, modes.indexOf(trigger.chatMode)) { index ->
+                    edit.save(edit.latest().copy(chatMode = modes[index]))
+                }
+            }
+            LeapCardRow.CHAT_TEXT -> {
+                val invalid = chatRegexInvalid(trigger)
+                val noteWidth = if (invalid) LeapTriggerLayout.CHAT_NOTE_WIDTH else 0
+                val fieldRect = LayoutRect(c.x, c.y, c.w - noteWidth, c.h)
+                leapField(edit, "lt:${edit.id}:chatText", trigger.chatText, "e.g. abc", fieldRect)
+                if (invalid) {
+                    edit.draw.text(
+                        edit.draw.fit("Invalid regex", noteWidth - 8, edit.draw.smallFont),
+                        fieldRect.right + 8,
+                        c.y + (c.h - edit.draw.lineHeight(edit.draw.smallFont)) / 2,
+                        edit.draw.palette.danger,
+                        edit.draw.smallFont,
+                    )
+                }
+            }
+            else -> {
+                val choices = LeapChatCooldown.CHOICES_MS
+                val nearest = choices.indices.minBy { kotlin.math.abs(choices[it] - trigger.chatCooldownMs) }
+                leapSelectRow(edit, row, c, choices.map { chatCooldownLabel(it) }, nearest) { index ->
+                    edit.save(edit.latest().copy(chatCooldownMs = choices[index]))
+                }
+            }
+        }
+    }
+
+    private fun drawClockRow(edit: LeapCardEdit, row: LeapCardRow, c: LayoutRect) {
+        val spec = edit.latest().clock ?: ClockSpec.stormElapsed(35.0)
+        when (row) {
+            LeapCardRow.TIMER -> leapSelectRow(edit, row, c, TimerClock.entries.map { it.label() }, TimerClock.entries.indexOf(spec.clock)) { index ->
+                val seconds = TimerTrigger.parseSeconds(spec.secondsInput()) ?: 35.0
+                edit.save(edit.latest().copy(clock = ClockSpec.forSeconds(TimerClock.entries[index], seconds)))
+            }
+            LeapCardRow.SECONDS -> leapField(edit, "lt:${edit.id}:secs", spec.secondsInput(), "seconds", c)
+            LeapCardRow.METRIC -> leapSelectRow(edit, row, c, ClockMetric.entries.map { it.label() }, ClockMetric.entries.indexOf(spec.metric)) { index ->
+                edit.save(edit.latest().copy(clock = spec.copy(metric = ClockMetric.entries[index])))
+            }
+            else -> leapSelectRow(edit, row, c, ClockCrossing.entries.map { it.label() }, ClockCrossing.entries.indexOf(spec.crossing)) { index ->
+                edit.save(edit.latest().copy(clock = spec.copy(crossing = ClockCrossing.entries[index])))
+            }
+        }
+    }
+
+    /** One ordered action: kind picker, value picker, then move up / move down / remove icon buttons. */
+    private fun drawStepRow(edit: LeapCardEdit, index: Int, control: LayoutRect) {
+        val step = edit.latest().steps.getOrNull(index) ?: return
+        val count = edit.latest().steps.size
+        val parts = LeapTriggerLayout.stepControls(control)
+        val draw = edit.draw
+        draw.selectButton(step.kind.label, parts.kind.x, parts.kind.y, parts.kind.w, parts.kind.h) {
+            val next = LeapAutoStep.nextKind(step.kind, index, edit.latest().steps)
+            editStep(edit, index) { it.withKind(next, firstSortPresetName(), firstStatsPresetId()) }
+        }
+        drawStepValue(edit, index, step, parts.value)
+        draw.stepIconButton(parts.up, StepGlyph.UP, enabled = index > 0) {
+            edit.save(edit.latest().withStepMoved(index, index - 1))
+        }
+        draw.stepIconButton(parts.down, StepGlyph.DOWN, enabled = index < count - 1) {
+            edit.save(edit.latest().withStepMoved(index, index + 1))
+        }
+        draw.stepIconButton(parts.remove, StepGlyph.REMOVE, enabled = true) {
+            edit.save(edit.latest().withStepRemoved(index))
+        }
+    }
+
+    private fun drawAddStepRow(edit: LeapCardEdit, c: LayoutRect) {
+        val trigger = edit.latest()
+        if (trigger.steps.isEmpty()) {
+            edit.draw.text(
+                "No actions yet",
+                c.x,
+                c.y + (c.h - edit.draw.lineHeight(edit.draw.smallFont)) / 2,
+                edit.draw.palette.tertiary,
+                edit.draw.smallFont,
+            )
+        }
+        if (trigger.steps.size >= LeapAutoStep.MAX_STEPS) return
+        val button = LayoutRect(c.x + c.w - ADD_ACTION_BUTTON_WIDTH, c.y, ADD_ACTION_BUTTON_WIDTH, c.h)
+        edit.draw.inlineButton("+ Add action", button) {
+            edit.save(edit.latest().withStepAdded(LeapAutoStep.newStep(firstSortPresetName())))
+        }
+    }
+
+    /**
+     * Indented options under a sort step. The armed row is a toggle with its caption; the lock row is a toggle
+     * too; reopen-block and arm-expiry are cycle buttons. Rects come from [LeapTriggerLayout] like every other row.
+     */
+    private fun drawSortOptionRow(edit: LeapCardEdit, row: LeapCardRow, index: Int, c: LayoutRect) {
+        val step = edit.latest().steps.getOrNull(index) ?: return
+        val draw = edit.draw
+        when (row) {
+            LeapCardRow.SORT_ARMED -> drawSortToggle(edit, index, step.sortArmed, c, "Wait until I open inventory") {
+                it.copy(sortArmed = !it.sortArmed)
+            }
+            LeapCardRow.SORT_LOCK -> drawSortToggle(edit, index, step.sortLockUntilDone, c, "Keep inventory open until sorted") {
+                it.copy(sortLockUntilDone = !it.sortLockUntilDone)
+            }
+            LeapCardRow.SORT_REOPEN -> {
+                val choices = LeapAutoStep.SORT_REOPEN_CHOICES_MS
+                val current = choices.indexOf(step.sortReopenBlockMs)
+                draw.selectButton(LeapAutoStep.reopenBlockLabel(step.sortReopenBlockMs), c.x, c.y, c.w, c.h) {
+                    val next = choices[(current + 1).mod(choices.size)]
+                    editStep(edit, index) { it.copy(sortReopenBlockMs = next) }
+                }
+            }
+            else -> {
+                val choices = LeapAutoStep.SORT_ARM_TIMEOUT_CHOICES_MS
+                val current = choices.indexOf(step.sortArmTimeoutMs)
+                draw.selectButton(LeapAutoStep.armTimeoutLabel(step.sortArmTimeoutMs), c.x, c.y, c.w, c.h) {
+                    val next = choices[(current + 1).mod(choices.size)]
+                    editStep(edit, index) { it.copy(sortArmTimeoutMs = next) }
+                }
+            }
+        }
+    }
+
+    private fun drawSortToggle(
+        edit: LeapCardEdit,
+        index: Int,
+        on: Boolean,
+        c: LayoutRect,
+        caption: String,
+        change: (LeapAutoStep) -> LeapAutoStep,
+    ) {
+        val draw = edit.draw
+        val toggleY = c.y + (c.h - TOGGLE_HEIGHT) / 2
+        draw.toggle(c.x, toggleY, on) { editStep(edit, index, change) }
+        draw.text(
+            draw.fit(caption, c.w - TOGGLE_WIDTH - 8, draw.smallFont),
+            c.x + TOGGLE_WIDTH + 8,
+            c.y + (c.h - draw.lineHeight(draw.smallFont)) / 2,
+            draw.palette.secondary,
+            draw.smallFont,
+        )
+    }
+
+    private fun drawStepValue(edit: LeapCardEdit, index: Int, step: LeapAutoStep, c: LayoutRect) {
+        when (step.kind) {
+            LeapAutoKind.SORT_INVENTORY -> drawSortPresetRow(edit, index, step, c)
+            LeapAutoKind.EQUIP_STATS -> drawStatsPresetRow(edit, index, step, c)
+            LeapAutoKind.SWITCH_LOADOUT -> drawLoadoutRow(edit, index, step, c)
+            LeapAutoKind.MARK_PLAYER -> leapReadOnly(edit.draw, c, LeapMarkRouter.summary(step))
+            // The leap settings are drawn as their own rows underneath, so this row has no value control.
+            LeapAutoKind.LEAP_TARGET, LeapAutoKind.FOLLOWUP_LEAP -> Unit
+        }
+    }
+
+    /**
+     * Indented options under a mark step. Each row writes only its own step. Color is a swatch plus a cycle
+     * button, For cycles through [LeapMarkRouter.SECONDS_CHOICES], and Show name is a toggle. Labels are not
+     * drawn in the world yet, so the toggle says so.
+     */
+    private fun drawMarkRow(edit: LeapCardEdit, row: LeapCardRow, index: Int, c: LayoutRect) {
+        val step = edit.latest().steps.getOrNull(index) ?: return
+        val draw = edit.draw
+        when (row) {
+            LeapCardRow.MARK_BY -> {
+                val options = listOf("Class", "Player")
+                val selected = if (step.markTargetsPlayer()) 1 else 0
+                followSelect(edit, row, index, c, options, selected) { i ->
+                    val by = if (i == 1) LeapMarkRouter.BY_PLAYER else LeapMarkRouter.BY_CLASS
+                    editStep(edit, index) { it.copy(markBy = by) }
+                }
+            }
+            LeapCardRow.MARK_TARGET_CLASS -> {
+                val classes = LeapDungeonClass.PLAYABLE
+                val selected = classes.indexOf(LeapDungeonClass.fromToken(step.markClass)).coerceAtLeast(0)
+                followSelect(edit, row, index, c, classes.map { it.displayName }, selected) { i ->
+                    editStep(edit, index) { it.copy(markClass = classes[i].name) }
+                }
+            }
+            LeapCardRow.MARK_TARGET_PLAYER ->
+                leapField(edit, "lt:${edit.id}:mark:$index:player", step.markPlayer, "player", c)
+            LeapCardRow.MARK_STYLE -> {
+                val styles = MarkerStyle.entries
+                val options = styles.map { style -> style.name.lowercase().replaceFirstChar { it.uppercase() } }
+                followSelect(edit, row, index, c, options, styles.indexOf(LeapMarkRouter.styleOf(step))) { i ->
+                    editStep(edit, index) { it.copy(markStyle = styles[i].name) }
+                }
+            }
+            LeapCardRow.MARK_COLOR -> drawMarkColor(edit, index, step, c)
+            LeapCardRow.MARK_FOR -> {
+                val choices = LeapMarkRouter.SECONDS_CHOICES
+                val current = choices.indexOf(step.markSeconds)
+                draw.selectButton(LeapMarkRouter.secondsLabel(step.markSeconds), c.x, c.y, c.w, c.h) {
+                    val next = choices[(current + 1).mod(choices.size)]
+                    editStep(edit, index) { it.copy(markSeconds = next) }
+                }
+            }
+            LeapCardRow.MARK_SHOW_NAME -> {
+                val caption = if (step.markShowName) "On" else "Off"
+                val toggleY = c.y + (c.h - TOGGLE_HEIGHT) / 2
+                draw.toggle(c.x, toggleY, step.markShowName) {
+                    editStep(edit, index) { it.copy(markShowName = !it.markShowName) }
+                }
+                draw.text(
+                    draw.fit(caption, c.w - TOGGLE_WIDTH - 8, draw.smallFont),
+                    c.x + TOGGLE_WIDTH + 8,
+                    c.y + (c.h - draw.lineHeight(draw.smallFont)) / 2,
+                    draw.palette.secondary,
+                    draw.smallFont,
+                )
+            }
+            LeapCardRow.MARK_OPACITY -> cycleMarkRow(edit, index, c, MarkerLook.opacityLabel(step.markOpacity)) {
+                editStep(edit, index) { it.copy(markOpacity = MarkerLook.cycle(MarkerLook.OPACITY_CHOICES, it.markOpacity)) }
+            }
+            LeapCardRow.MARK_BRIGHTNESS -> cycleMarkRow(edit, index, c, MarkerLook.brightnessLabel(step.markBrightness)) {
+                editStep(edit, index) { it.copy(markBrightness = MarkerLook.cycle(MarkerLook.BRIGHTNESS_CHOICES, it.markBrightness)) }
+            }
+            LeapCardRow.MARK_SIZE -> cycleMarkRow(edit, index, c, MarkerLook.sizeLabel(step.markSize)) {
+                editStep(edit, index) { it.copy(markSize = MarkerLook.cycle(MarkerLook.SIZE_CHOICES, it.markSize)) }
+            }
+            LeapCardRow.MARK_HEIGHT -> cycleMarkRow(edit, index, c, MarkerLook.heightLabel(step.markHeight)) {
+                editStep(edit, index) { it.copy(markHeight = MarkerLook.cycle(MarkerLook.HEIGHT_CHOICES, it.markHeight)) }
+            }
+            LeapCardRow.MARK_PULSE -> markToggleRow(edit, index, c, step.markPulse, "On", "Off") {
+                editStep(edit, index) { it.copy(markPulse = !it.markPulse) }
+            }
+            LeapCardRow.MARK_SHAPE -> cycleMarkRow(edit, index, c, MarkerShapes.label(step.markArrowShape)) {
+                editStep(edit, index) { it.copy(markArrowShape = MarkerShapes.next(it.markArrowShape)) }
+            }
+            LeapCardRow.MARK_SPIN -> markToggleRow(edit, index, c, step.markSpin, "On", "Off") {
+                editStep(edit, index) { it.copy(markSpin = !it.markSpin) }
+            }
+            LeapCardRow.MARK_BOB -> markToggleRow(edit, index, c, step.markBob, "On", "Off") {
+                editStep(edit, index) { it.copy(markBob = !it.markBob) }
+            }
+            LeapCardRow.MARK_PLAYER_GLOW -> markToggleRow(edit, index, c, step.markPlayerGlow, "On (vanilla outline, team color)", "Off") {
+                editStep(edit, index) { it.copy(markPlayerGlow = !it.markPlayerGlow) }
+            }
+            LeapCardRow.MARK_MARKER_GLOW -> markToggleRow(edit, index, c, step.markMarkerGlow, "On (bright core and halo)", "Off") {
+                editStep(edit, index) { it.copy(markMarkerGlow = !it.markMarkerGlow) }
+            }
+            LeapCardRow.MARK_THROUGH -> markToggleRow(edit, index, c, step.markThroughWalls, "On", "Off") {
+                editStep(edit, index) { it.copy(markThroughWalls = !it.markThroughWalls) }
+            }
+            else -> Unit
+        }
+    }
+
+    /** A value button that cycles on press. */
+    private fun cycleMarkRow(edit: LeapCardEdit, index: Int, c: LayoutRect, label: String, onPress: () -> Unit) {
+        edit.draw.selectButton(label, c.x, c.y, c.w, c.h, onPress)
+    }
+
+    /** A toggle with a caption beside it, the same layout as Show name. */
+    private fun markToggleRow(
+        edit: LeapCardEdit,
+        index: Int,
+        c: LayoutRect,
+        on: Boolean,
+        onCaption: String,
+        offCaption: String,
+        onPress: () -> Unit,
+    ) {
+        val draw = edit.draw
+        val toggleY = c.y + (c.h - TOGGLE_HEIGHT) / 2
+        draw.toggle(c.x, toggleY, on, onPress)
+        draw.text(
+            draw.fit(if (on) onCaption else offCaption, c.w - TOGGLE_WIDTH - 8, draw.smallFont),
+            c.x + TOGGLE_WIDTH + 8,
+            c.y + (c.h - draw.lineHeight(draw.smallFont)) / 2,
+            draw.palette.secondary,
+            draw.smallFont,
+        )
+    }
+
+    /** Swatch and name of the marker color; both advance to the next palette entry when pressed. */
+    private fun drawMarkColor(edit: LeapCardEdit, index: Int, step: LeapAutoStep, c: LayoutRect) {
+        val choices = LeapMarkRouter.COLOR_CHOICES
+        val current = choices.indexOfFirst { it.second == step.markColor }
+        val cycle: () -> Unit = {
+            val next = choices[(current + 1).mod(choices.size)].second
+            editStep(edit, index) { it.copy(markColor = next) }
+        }
+        val swatchSize = 16
+        edit.draw.swatch(c.x, c.y + (c.h - swatchSize) / 2, step.markColor and 0xFFFFFF, false, cycle)
+        val textX = c.x + swatchSize + 8
+        edit.draw.selectButton(LeapMarkRouter.colorName(step.markColor), textX, c.y, c.w - (textX - c.x), c.h, cycle)
+    }
+
+    /**
+     * Indented leap settings of one follow-up step. Rects come from [LeapTriggerLayout]; the step's own fields
+     * are edited, so each row writes only its step.
+     */
+    private fun drawFollowRow(edit: LeapCardEdit, row: LeapCardRow, index: Int, c: LayoutRect) {
+        val step = edit.latest().steps.getOrNull(index) ?: return
+        val draw = edit.draw
+        when (row) {
+            LeapCardRow.FOLLOW_CENTER -> {
+                val targets = LeapCenterTarget.entries
+                followSelect(edit, row, index, c, targets.map { it.label() }, targets.indexOf(step.followTarget)) { i ->
+                    editStep(edit, index) { it.copy(followTarget = targets[i]) }
+                }
+            }
+            LeapCardRow.FOLLOW_CLASS -> {
+                val classes = LeapDungeonClass.PLAYABLE
+                val selected = classes.indexOf(LeapDungeonClass.fromToken(step.followTargetValue)).coerceAtLeast(0)
+                followSelect(edit, row, index, c, classes.map { it.displayName }, selected) { i ->
+                    editStep(edit, index) { it.copy(followTargetValue = classes[i].name.lowercase()) }
+                }
+            }
+            LeapCardRow.FOLLOW_PLAYER -> leapField(edit, "lt:${edit.id}:follow:$index:name", step.followTargetValue, "player", c)
+            LeapCardRow.FOLLOW_HOLD_MODE -> {
+                val modes = LeapHoldMode.entries
+                followSelect(edit, row, index, c, modes.map { it.label() }, modes.indexOf(step.followHoldMode)) { i ->
+                    editStep(edit, index) { it.copy(followHoldMode = modes[i]) }
+                }
+            }
+            LeapCardRow.FOLLOW_HOLD_DURATION -> {
+                val global = TickTimers.settings.leap.durationSeconds
+                val choices = (LeapHoldSpec.CHOICES_SECONDS + step.followHoldSeconds).filter { it > 0 }.distinct().sorted()
+                val options = listOf("Default (${global}s)") + choices.map { "${it}s" }
+                val selected = if (step.followHoldSeconds <= 0) 0 else choices.indexOf(step.followHoldSeconds) + 1
+                followSelect(edit, row, index, c, options, selected) { i ->
+                    val seconds = if (i == 0) 0 else choices[i - 1]
+                    editStep(edit, index) { it.copy(followHoldSeconds = seconds) }
+                }
+            }
+            LeapCardRow.FOLLOW_HOLD_LOCK -> {
+                val on = step.followHoldLocked
+                val caption = if (on) "Other triggers can't replace this target while it's active" else "Off: other triggers can replace it"
+                val toggleY = c.y + (c.h - TOGGLE_HEIGHT) / 2
+                draw.toggle(c.x, toggleY, on) { editStep(edit, index) { it.copy(followHoldLocked = !it.followHoldLocked) } }
+                draw.text(
+                    draw.fit(caption, c.w - TOGGLE_WIDTH - 8, draw.smallFont),
+                    c.x + TOGGLE_WIDTH + 8,
+                    c.y + (c.h - draw.lineHeight(draw.smallFont)) / 2,
+                    draw.palette.secondary,
+                    draw.smallFont,
+                )
+            }
+            else -> {
+                val choices = LeapAutoStep.FOLLOW_WITHIN_CHOICES_S
+                val selected = choices.indexOf(step.followWithinSeconds).coerceAtLeast(0)
+                followSelect(edit, row, index, c, choices.map { LeapAutoStep.followWithinLabel(it) }, selected) { i ->
+                    editStep(edit, index) { it.copy(followWithinSeconds = choices[i]) }
+                }
+            }
+        }
+    }
+
+    private fun followSelect(
+        edit: LeapCardEdit,
+        row: LeapCardRow,
+        index: Int,
+        c: LayoutRect,
+        options: List<String>,
+        selected: Int,
+        onSelect: (Int) -> Unit,
+    ) {
+        val shown = options.getOrElse(selected) { "" }
+        leapSelect(edit.draw, "leap-select:${edit.id}:${row.name}:$index", shown, options, selected, c, emptyMap(), onSelect)
+    }
+
+    private fun editStep(edit: LeapCardEdit, index: Int, transform: (LeapAutoStep) -> LeapAutoStep) {
+        edit.save(edit.latest().withStepChanged(index, transform))
+    }
+
+    private fun firstSortPresetName(): String = InvSortController.settings.presets.firstOrNull()?.name.orEmpty()
+
+    private fun firstStatsPresetId(): String = TickTimers.settings.statsArmor.presets().firstOrNull()?.id.orEmpty()
+
+    private fun drawSortPresetRow(edit: LeapCardEdit, index: Int, step: LeapAutoStep, c: LayoutRect) {
+        val names = InvSortController.settings.presets.map { it.name }
+        val storedIndex = names.indexOfFirst { it.equals(step.sortPreset, ignoreCase = true) }
+        val shown = when {
+            names.isEmpty() -> "(no presets)"
+            step.sortPreset.isBlank() -> "choose"
+            storedIndex < 0 -> "${step.sortPreset} (missing)"
+            else -> names[storedIndex]
+        }
+        edit.draw.selectButton(shown, c.x, c.y, c.w, c.h) {
+            if (names.isEmpty()) return@selectButton
+            editStep(edit, index) { it.copy(sortPreset = names[(storedIndex + 1).mod(names.size)]) }
+        }
+    }
+
+    private fun statsPresetLabels(): Map<String, String> = StatsArmor.presetLabels()
+
+    private fun drawStatsPresetRow(edit: LeapCardEdit, index: Int, step: LeapAutoStep, c: LayoutRect) {
+        val presets = TickTimers.settings.statsArmor.presets()
+        val storedIndex = presets.indexOfFirst { it.id == step.statsPreset }
+        val shown = when {
+            presets.isEmpty() -> "(no presets)"
+            step.statsPreset.isBlank() -> "choose"
+            storedIndex < 0 -> "(missing)"
+            else -> StatsArmor.presetLabel(presets[storedIndex])
+        }
+        edit.draw.selectButton(shown, c.x, c.y, c.w, c.h) {
+            if (presets.isEmpty()) return@selectButton
+            val next = presets[(storedIndex + 1).mod(presets.size)]
+            editStep(edit, index) { it.copy(statsPreset = next.id) }
+        }
+    }
+
+    private fun drawLoadoutRow(edit: LeapCardEdit, index: Int, step: LeapAutoStep, c: LayoutRect) {
+        val stored = step.loadout
+        val shown = if (stored in 1..LoadoutPlan.MAX_LOADOUT) "Loadout $stored" else "choose"
+        edit.draw.selectButton(shown, c.x, c.y, c.w, c.h) {
+            val next = if (stored in 1 until LoadoutPlan.MAX_LOADOUT) stored + 1 else 1
+            editStep(edit, index) { it.copy(loadout = next) }
+        }
+    }
+
+    private fun drawMatchRow(edit: LeapCardEdit, c: LayoutRect) {
+        val trigger = edit.latest()
+        val chain = trigger.event == LeapTriggerEvent.LEAP_CHAIN
+        val tokens = (if (chain) listOf("any") else listOf("self", "any")) +
+            LeapDungeonClass.PLAYABLE.map { it.shortName.lowercase() }
+        val labels = tokens.map { token ->
+            when (token) {
+                "self" -> "Me: I leaped"
+                "any" -> "Anyone"
+                else -> "${LeapDungeonClass.fromToken(token)?.displayName ?: token} leaped"
+            }
+        }
+        val selected = tokens.indexOfFirst { it.equals(trigger.match, ignoreCase = true) }.coerceAtLeast(0)
+        leapSelectRow(edit, LeapCardRow.MATCH, c, labels, selected) { index ->
+            edit.save(edit.latest().copy(match = tokens[index]))
+        }
+    }
+
+    private fun drawFilterRow(edit: LeapCardEdit, row: LeapCardRow, c: LayoutRect) {
+        val trigger = edit.latest()
+        val classes = LeapDungeonClass.PLAYABLE
+        val optionalClassLabels = listOf("None") + classes.map { it.displayName }
+        when (row) {
+            LeapCardRow.ONLY_WHEN -> leapSelectRow(edit, row, c, listOf("Any class") + classes.map { it.displayName }, optionalClassIndex(trigger.forClass)) { index ->
+                edit.save(edit.latest().copy(forClass = optionalClassAt(index)))
+            }
+            LeapCardRow.FOR_PRESET -> leapReadOnly(edit.draw, c, edit.card.actorLabel())
+            LeapCardRow.CENTER_ON -> leapSelectRow(edit, row, c, LeapCenterTarget.entries.map { it.label() }, LeapCenterTarget.entries.indexOf(trigger.target)) { index ->
+                edit.save(edit.latest().copy(target = LeapCenterTarget.entries[index]))
+            }
+            LeapCardRow.CLASS -> leapSelectRow(edit, row, c, classes.map { it.displayName }, classes.indexOf(LeapDungeonClass.fromToken(trigger.targetValue)).coerceAtLeast(0)) { index ->
+                edit.save(edit.latest().copy(targetValue = classes[index].name.lowercase()))
+            }
+            LeapCardRow.REQUIRES -> leapSelectRow(edit, row, c, optionalClassLabels, optionalClassIndex(trigger.requiresTargetClass)) { index ->
+                edit.save(edit.latest().copy(requiresTargetClass = optionalClassAt(index)))
+            }
+            LeapCardRow.PHASE -> leapSelectRow(edit, row, c, LEAP_PHASE_LABELS, LEAP_PHASE_CHOICES.indexOf(trigger.phase).coerceAtLeast(0)) { index ->
+                edit.save(edit.latest().copy(phase = LEAP_PHASE_CHOICES[index]))
+            }
+            LeapCardRow.FLOOR -> leapSelectRow(edit, row, c, LEAP_FLOOR_LABELS, LEAP_FLOOR_CHOICES.indexOf(trigger.floor).coerceAtLeast(0)) { index ->
+                edit.save(edit.latest().copy(floor = LEAP_FLOOR_CHOICES[index]))
+            }
+            LeapCardRow.ROUTE -> leapSelectRow(edit, row, c, LEAP_ROUTE_LABELS, LEAP_ROUTE_CHOICES.indexOf(trigger.route).coerceAtLeast(0)) { index ->
+                edit.save(edit.latest().copy(route = LEAP_ROUTE_CHOICES[index]))
+            }
+            LeapCardRow.SECTION -> leapSelectRow(edit, row, c, LEAP_SECTION_LABELS, trigger.section.coerceIn(0, 4)) { index ->
+                edit.save(edit.latest().copy(section = index))
+            }
+            LeapCardRow.TARGET_NAME -> leapField(edit, "lt:${edit.id}:name", trigger.targetValue, "player", c)
+            LeapCardRow.TARGET_INFO -> leapReadOnly(edit.draw, c, "Uses the player captured by the event.")
+            LeapCardRow.ZONE -> leapField(edit, "lt:${edit.id}:zone", trigger.zone, "SS", c)
+            LeapCardRow.REASON -> leapField(edit, "lt:${edit.id}:reason", trigger.reason, "reason", c)
+            LeapCardRow.PLAYER -> leapField(
+                edit,
+                "lt:${edit.id}:match",
+                trigger.match.takeUnless { it.equals("any", ignoreCase = true) }.orEmpty(),
+                "anyone",
+                c,
+            )
+            LeapCardRow.COLOR -> leapField(
+                edit,
+                "lt:${edit.id}:match",
+                trigger.match.takeUnless { it.equals("any", ignoreCase = true) }.orEmpty(),
+                "any color",
+                c,
+            )
+            LeapCardRow.VALUE -> leapField(
+                edit,
+                "lt:${edit.id}:match",
+                trigger.match.takeUnless { it.equals("any", ignoreCase = true) }.orEmpty(),
+                valuePlaceholder(trigger.event),
+                c,
+            )
+            else -> Unit
+        }
+    }
+
+    private fun leapSelectRow(
+        edit: LeapCardEdit,
+        row: LeapCardRow,
+        c: LayoutRect,
+        options: List<String>,
+        selected: Int,
+        headers: Map<Int, String> = emptyMap(),
+        onSelect: (Int) -> Unit,
+    ) {
+        val shown = options.getOrElse(selected) { "" }
+        leapSelect(edit.draw, "leap-select:${edit.id}:${row.name}", shown, options, selected, c, headers, onSelect)
+    }
+
+    private fun valuePlaceholder(event: LeapTriggerEvent): String = when (event) {
+        LeapTriggerEvent.ISLAND_ENTERED, LeapTriggerEvent.ISLAND_LEFT -> "any island"
+        LeapTriggerEvent.CLASS_SELECTED -> "any class"
+        LeapTriggerEvent.BLESSING -> "any blessing"
+        else -> "any"
+    }
+
+    private fun leapField(edit: LeapCardEdit, id: String, value: String, placeholder: String, c: LayoutRect) {
+        edit.draw.field(id, field(id, value), placeholder, c.x, c.y, c.w, focused == id, c.h)
+    }
+
+    private fun leapReadOnly(draw: MenuDraw, c: LayoutRect, text: String) {
+        draw.text(
+            draw.fit(text, c.w, draw.smallFont),
+            c.x,
+            c.y + (c.h - draw.lineHeight(draw.smallFont)) / 2,
+            draw.palette.secondary,
+            draw.smallFont,
+        )
+    }
+
+    private fun optionalClassIndex(clazz: LeapDungeonClass): Int =
+        if (clazz.isReal()) LeapDungeonClass.PLAYABLE.indexOf(clazz) + 1 else 0
+
+    private fun optionalClassAt(index: Int): LeapDungeonClass =
+        if (index == 0) LeapDungeonClass.EMPTY else LeapDungeonClass.PLAYABLE[index - 1]
+
+    private fun addLeapTrigger(trigger: LeapOrientTrigger) {
+        TickTimers.updateLeap { it.upsertTrigger(trigger) }
+        ConfigUiSession.leapExpandedCards.add(trigger.id)
+        pendingRevealId = trigger.id
     }
 
     private fun syncTriggerEvent(trigger: LeapOrientTrigger, event: LeapTriggerEvent): LeapOrientTrigger {
@@ -1249,6 +2183,18 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private fun applyBind(id: String, code: Int) {
         if (id == "freelookKey") {
             Freelook.setKey(code)
+            return
+        }
+        if (id == "zoomKey") {
+            Visuals.edit { it.copy(zoomKey = code) }
+            return
+        }
+        if (id == "aimKey") {
+            BossAim.edit { it.copy(key = code) }
+            return
+        }
+        if (id == "aimLockKey") {
+            BossAim.edit { it.copy(lockKey = code) }
             return
         }
         if (id == "dropUltimateStackKey") {
@@ -1289,13 +2235,14 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
 
     private fun keyLabel(code: Int): String {
         if (code == LeapOrientSettings.UNBOUND || code == FreelookConfig.UNBOUND) return "None"
-        return GLFW.glfwGetKeyName(code, 0)?.uppercase() ?: "Key $code"
+        return icantpyKeyLabel(code)
     }
 
     private fun drawCamera(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Rotate the camera without turning your character.")
         var y = section(
             draw,
-            startY,
+            helpY,
             "Freelook",
             "Camera only. Switches to third person while active, then restores your view. Movement, hits, and look packets keep your original facing. Bind the key in Minecraft Controls (icantpy category).",
         )
@@ -1329,11 +2276,618 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         )
     }
 
+    /** One on/off setting on a Visuals subtab. [read] and [write] take the live config, so clicks never use a stale copy. */
+    private class VisualToggle(
+        val title: String,
+        val subtitle: String,
+        val read: (VisualsConfig) -> Boolean,
+        val write: (VisualsConfig, Boolean) -> VisualsConfig,
+    )
+
+    /** One numeric setting changed by a - / + pair, clamped to [min]..[max]. */
+    private class VisualStep(
+        val title: String,
+        val step: Float,
+        val min: Float,
+        val max: Float,
+        val read: (VisualsConfig) -> Float,
+        val write: (VisualsConfig, Float) -> VisualsConfig,
+    )
+
+    private fun visualToggles(draw: MenuDraw, startY: Int, toggles: List<VisualToggle>): Int {
+        val config = Visuals.config()
+        var y = startY
+        toggles.forEachIndexed { index, toggle ->
+            y = toggleRow(draw, y, toggle.title, toggle.subtitle, toggle.read(config), index == toggles.lastIndex) {
+                Visuals.edit { current -> toggle.write(current, !toggle.read(current)) }
+            }
+        }
+        return y + 8
+    }
+
+    private fun visualSteps(draw: MenuDraw, startY: Int, steps: List<VisualStep>): Int {
+        var y = startY
+        steps.forEach { step ->
+            val value = step.read(Visuals.config())
+            y = actionRow(draw, y, step.title, "", false) { cy ->
+                val plusX = rightX(32)
+                val minusX = plusX - 6 - 32
+                draw.button("-", minusX, cy, ButtonStyle.GHOST) {
+                    Visuals.edit { c -> step.write(c, stepValue(step.read(c), -step.step, step.min, step.max)) }
+                }
+                draw.button("+", plusX, cy, ButtonStyle.GHOST) {
+                    Visuals.edit { c -> step.write(c, stepValue(step.read(c), step.step, step.min, step.max)) }
+                }
+                val text = formatValue(value)
+                draw.text(text, minusX - 14 - draw.measure(text, draw.bodyFont), cy + 6, draw.palette.text, draw.bodyFont)
+            }
+        }
+        return y + 8
+    }
+
+    /** A row of chips; [selected] is highlighted, -1 for none. */
+    private fun visualChipRow(
+        draw: MenuDraw,
+        y: Int,
+        title: String,
+        subtitle: String,
+        labels: List<String>,
+        selected: Int,
+        last: Boolean,
+        onPick: (Int) -> Unit,
+    ): Int = actionRow(draw, y, title, subtitle, last) { cy ->
+        var x = rightX(0)
+        labels.indices.reversed().forEach { index ->
+            x -= draw.measure(labels[index], draw.buttonFont) + 24
+            draw.chip(labels[index], x, cy, index == selected) { onPick(index) }
+            x -= 6
+        }
+    }
+
+    /**
+     * A row with a slider from [min] to [max] in [step]s, showing [format] of the value to its left. [onChange] runs
+     * only when the snapped value changes, so dragging does not save on every mouse move.
+     */
+    private fun sliderRow(
+        draw: MenuDraw,
+        y: Int,
+        title: String,
+        subtitle: String,
+        value: Float,
+        min: Float,
+        max: Float,
+        step: Float,
+        last: Boolean,
+        format: (Float) -> String,
+        onChange: (Float) -> Unit,
+    ): Int = actionRow(draw, y, title, subtitle, last) { cy ->
+        val x = rightX(SLIDER_WIDTH)
+        val label = format(value)
+        draw.text(label, x - 12 - draw.measure(label, draw.buttonFont), cy + 6, draw.palette.secondary, draw.buttonFont)
+        draw.slider(x, cy, SLIDER_WIDTH, (value - min) / (max - min)) { f ->
+            val snapped = Math.round((min + f * (max - min) - min) / step) * step + min
+            val v = Math.round(snapped.coerceIn(min, max) * 100f) / 100f
+            if (v != sliderLast) {
+                sliderLast = v
+                onChange(v)
+            }
+        }
+    }
+
+    private fun stepValue(current: Float, delta: Float, min: Float, max: Float): Float =
+        Math.round((current + delta).coerceIn(min, max) * 100f) / 100f
+
+    private fun formatValue(value: Float): String =
+        if (value % 1f == 0f) "%.0f".format(value) else "%.2f".format(value)
+
+    /** Index of the option closest to [value], or -1 when [options] is empty. */
+    private fun nearestIndex(options: List<Float>, value: Float): Int =
+        options.indices.minByOrNull { kotlin.math.abs(options[it] - value) } ?: -1
+
+    private fun swingLabel(mode: SwingMode): String = when (mode) {
+        SwingMode.VANILLA -> "Vanilla"
+        SwingMode.PUSH -> "Push"
+        SwingMode.STAB -> "Stab"
+        SwingMode.SPIN -> "Spin"
+        SwingMode.PUNCH -> "Punch"
+        SwingMode.SWING_DOWN -> "Swing down"
+    }
+
+    private fun resetViewmodel(c: VisualsConfig): VisualsConfig {
+        val d = VisualsConfig()
+        return c.copy(
+            offsetX = d.offsetX,
+            offsetY = d.offsetY,
+            offsetZ = d.offsetZ,
+            rotYaw = d.rotYaw,
+            rotPitch = d.rotPitch,
+            rotRoll = d.rotRoll,
+            scale = d.scale,
+            swingMode = d.swingMode,
+            swingSpeed = d.swingSpeed,
+            noEquipReset = d.noEquipReset,
+        )
+    }
+
+    private fun drawVisualsCleanup(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Hide overlays, camera shake and particles you find distracting. Everything is vanilla until you turn it on.")
+        val rowsY = section(draw, helpY, "Render cleanup", "Each switch removes one vanilla effect. Changes apply immediately and are saved.")
+        return visualToggles(
+            draw,
+            rowsY,
+            listOf(
+                VisualToggle("No fire overlay", "Hides the fire covering your screen while burning.", { it.noFireOverlay }) { c, v -> c.copy(noFireOverlay = v) },
+                VisualToggle("No water overlay", "Hides the blue tint while underwater.", { it.noWaterOverlay }) { c, v -> c.copy(noWaterOverlay = v) },
+                VisualToggle("No in-wall overlay", "Hides the overlay drawn when your head is inside a block.", { it.noInWallOverlay }) { c, v -> c.copy(noInWallOverlay = v) },
+                VisualToggle("No hurt camera", "Stops the camera tilt when you take damage.", { it.noHurtCamera }) { c, v -> c.copy(noHurtCamera = v) },
+                VisualToggle("No vignette", "Removes the dark edges on screen.", { it.noVignette }) { c, v -> c.copy(noVignette = v) },
+                VisualToggle("No block break particles", "Hides the debris when blocks break.", { it.noBlockBreakParticles }) { c, v -> c.copy(noBlockBreakParticles = v) },
+                VisualToggle("No explosion particles", "Hides explosion smoke and flash particles.", { it.noExplosionParticles }) { c, v -> c.copy(noExplosionParticles = v) },
+                VisualToggle("No lightning", "Hides lightning bolts in the world.", { it.noLightning }) { c, v -> c.copy(noLightning = v) },
+            ),
+        )
+    }
+
+    private fun drawVisualsWorld(draw: MenuDraw, startY: Int): Int {
+        val c = Visuals.config()
+        val helpY = pageHelp(draw, startY, "Lighting, time of day and fog. These only change how your client draws the world.")
+        var y = section(draw, helpY, "Light & time", "Fullbright lifts the darkness. Time of day pins the client clock; the server time is unchanged.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(
+                VisualToggle("Fullbright", "Full brightness everywhere, as if gamma were maxed.", { it.fullbright }) { cfg, v -> cfg.copy(fullbright = v) },
+                VisualToggle("Change time of day", "Pins the client clock to the time chosen below.", { it.timeChanger }) { cfg, v -> cfg.copy(timeChanger = v) },
+            ),
+        )
+        val times = listOf(0f, 6000f, 12000f, 18000f)
+        y = visualChipRow(
+            draw, y, "Time of day", "Picking a time also turns the time changer on.",
+            listOf("Sunrise", "Noon", "Sunset", "Midnight"),
+            if (c.timeChanger) nearestIndex(times, c.dayTime.toFloat()) else -1,
+            true,
+        ) { index -> Visuals.edit { it.copy(dayTime = times[index].toLong(), timeChanger = true) } }
+        y += 8
+        y = section(draw, y, "Fog", "Fog distance scales how far the fog starts and ends. 1x is vanilla.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("No fog", "Removes fog entirely.", { it.noFog }) { cfg, v -> cfg.copy(noFog = v) }),
+        )
+        val fogScales = listOf(0.5f, 1f, 2f, 4f)
+        y = visualChipRow(
+            draw, y, "Fog distance", "Multiplier on the vanilla fog range.",
+            listOf("0.5x", "1x", "2x", "4x"),
+            nearestIndex(fogScales, c.fogDistance),
+            true,
+        ) { index -> Visuals.edit { it.copy(fogDistance = fogScales[index]) } }
+        return y + 8
+    }
+
+    private fun drawVisualsCamera(draw: MenuDraw, startY: Int): Int {
+        val c = Visuals.config()
+        val helpY = pageHelp(draw, startY, "Third-person distance, zoom and aspect ratio.")
+        var y = section(draw, helpY, "Distance", "Third-person camera distance in blocks.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Custom distance", "Use the distance below instead of vanilla.", { it.customCameraDistance }) { cfg, v -> cfg.copy(customCameraDistance = v) }),
+        )
+        val distances = listOf(2f, 4f, 6f, 8f, 12f)
+        y = visualChipRow(
+            draw, y, "Camera distance", "Picking a distance also turns custom distance on.",
+            listOf("2", "4", "6", "8", "12"),
+            if (c.customCameraDistance) nearestIndex(distances, c.cameraDistance) else -1,
+            true,
+        ) { index -> Visuals.edit { it.copy(cameraDistance = distances[index], customCameraDistance = true) } }
+        y += 8
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Through walls", "Stops the third-person camera from pulling in against blocks.", { it.cameraThroughWalls }) { cfg, v -> cfg.copy(cameraThroughWalls = v) }),
+        )
+        y = section(draw, y, "Zoom", "Hold the zoom key to narrow the field of view. Unbound means zoom is off.")
+        y = bindRow(draw, y, "Zoom key", "zoomKey", c.zoomKey, false)
+        val zoomFactors = listOf(2f, 3f, 4f, 6f, 10f)
+        y = visualChipRow(
+            draw, y, "Zoom factor", "The field of view is divided by this while zoomed.",
+            listOf("2x", "3x", "4x", "6x", "10x"),
+            nearestIndex(zoomFactors, c.zoomFactor),
+            false,
+        ) { index -> Visuals.edit { it.copy(zoomFactor = zoomFactors[index]) } }
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Smooth zoom", "Eases the field of view in and out instead of snapping.", { it.zoomSmooth }) { cfg, v -> cfg.copy(zoomSmooth = v) }),
+        )
+        y = section(draw, y, "Aspect ratio", "Projects the view at a fixed width to height ratio.")
+        val aspects = listOf(4f / 3f, 1.6f, 16f / 9f, 21f / 9f)
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Custom aspect", "Use the ratio below instead of the window's.", { it.customAspect }) { cfg, v -> cfg.copy(customAspect = v) }),
+        )
+        y = visualChipRow(
+            draw, y, "Ratio", "Picking a ratio also turns custom aspect on.",
+            listOf("4:3", "16:10", "16:9", "21:9"),
+            if (c.customAspect) nearestIndex(aspects, c.aspectRatio) else -1,
+            true,
+        ) { index -> Visuals.edit { it.copy(aspectRatio = aspects[index], customAspect = true) } }
+        return y + 8
+    }
+
+    private fun drawVisualsViewmodel(draw: MenuDraw, startY: Int): Int {
+        val c = Visuals.config()
+        val helpY = pageHelp(draw, startY, "Move, tilt and scale the held item, and change the swing. Off keeps the vanilla hand.")
+        var y = section(draw, helpY, "Viewmodel", "Off keeps the vanilla hand, swing and equip animation, whatever is set below.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Enabled", "Applies the viewmodel settings on this page.", { it.viewmodelEnabled }) { cfg, v -> cfg.copy(viewmodelEnabled = v) }),
+        )
+        y = section(draw, y, "Position", "Offsets in blocks.")
+        y = visualSteps(
+            draw,
+            y,
+            listOf(
+                VisualStep("Offset X", 0.05f, -2f, 2f, { it.offsetX }) { cfg, v -> cfg.copy(offsetX = v) },
+                VisualStep("Offset Y", 0.05f, -2f, 2f, { it.offsetY }) { cfg, v -> cfg.copy(offsetY = v) },
+                VisualStep("Offset Z", 0.05f, -2f, 2f, { it.offsetZ }) { cfg, v -> cfg.copy(offsetZ = v) },
+            ),
+        )
+        y = section(draw, y, "Rotation", "Degrees.")
+        y = visualSteps(
+            draw,
+            y,
+            listOf(
+                VisualStep("Yaw", 5f, -180f, 180f, { it.rotYaw }) { cfg, v -> cfg.copy(rotYaw = v) },
+                VisualStep("Pitch", 5f, -180f, 180f, { it.rotPitch }) { cfg, v -> cfg.copy(rotPitch = v) },
+                VisualStep("Roll", 5f, -180f, 180f, { it.rotRoll }) { cfg, v -> cfg.copy(rotRoll = v) },
+            ),
+        )
+        y = section(draw, y, "Scale", "Size of the held item. 1 is vanilla.")
+        y = visualSteps(
+            draw,
+            y,
+            listOf(VisualStep("Scale", 0.05f, 0.1f, 2f, { it.scale }) { cfg, v -> cfg.copy(scale = v) }),
+        )
+        y = section(draw, y, "Swing", "Swing style and speed. Vanilla keeps the game's swing.")
+        val modes = SwingMode.entries
+        y = actionRow(draw, y, "Swing mode", "Click to cycle through the swing styles.", false) { cy ->
+            draw.button(swingLabel(c.swingMode), rightX(120), cy, ButtonStyle.PRIMARY) {
+                Visuals.edit { cfg -> cfg.copy(swingMode = modes[(cfg.swingMode.ordinal + 1) % modes.size]) }
+            }
+        }
+        val speeds = listOf(0.5f, 1f, 1.5f, 2f)
+        y = visualChipRow(
+            draw, y, "Swing speed", "Higher is faster.",
+            listOf("0.5x", "1x", "1.5x", "2x"),
+            nearestIndex(speeds, c.swingSpeed),
+            false,
+        ) { index -> Visuals.edit { it.copy(swingSpeed = speeds[index]) } }
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("No equip reset", "Skips the equip animation when you switch items.", { it.noEquipReset }) { cfg, v -> cfg.copy(noEquipReset = v) }),
+        )
+        y = actionRow(draw, y, "Reset viewmodel", "Restores offsets, rotation, scale and swing to defaults.", true) { cy ->
+            draw.button("Reset", rightX(90), cy, ButtonStyle.GHOST) {
+                Visuals.edit { resetViewmodel(it) }
+            }
+        }
+        return y + 8
+    }
+
+    private val visualColorNames = listOf("Pink", "Cyan", "Purple", "Red", "Gold", "Green", "White")
+    private val visualColorValues = listOf(0xFF7AF0, 0x6AD5FF, 0xA070FF, 0xFF4D4D, 0xFFC94D, 0x5DFF8A, 0xFFFFFF)
+
+    /** A chip per preset color; the chip matching [color] is highlighted. */
+    private fun visualColorRow(draw: MenuDraw, y: Int, title: String, subtitle: String, color: Int, last: Boolean, onPick: (Int) -> Unit): Int =
+        visualChipRow(draw, y, title, subtitle, visualColorNames, visualColorValues.indexOf(color), last) { index ->
+            onPick(visualColorValues[index])
+        }
+
+    /** A row with a button showing [label]; each click runs [onCycle], which advances the value. */
+    private fun visualCycleRow(draw: MenuDraw, y: Int, title: String, subtitle: String, label: String, last: Boolean, onCycle: () -> Unit): Int =
+        actionRow(draw, y, title, subtitle, last) { cy ->
+            draw.button(label, rightX(120), cy, ButtonStyle.PRIMARY) { onCycle() }
+        }
+
+    private fun drawVisualsHand(draw: MenuDraw, startY: Int): Int {
+        val c = Visuals.config()
+        val helpY = pageHelp(draw, startY, "Recolors the first-person hand and held item. Off keeps the vanilla colors.")
+        var y = section(draw, helpY, "Hand shader", "Pick a style, colors, speed and strength.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Hand shader", "Recolors your first-person hand and held item.", { it.handShader }) { cfg, v -> cfg.copy(handShader = v) }),
+        )
+        val modes = HandShaderMode.entries
+        y = visualCycleRow(draw, y, "Shader mode", "Click to cycle through the shader styles.", c.handShaderMode.label, false) {
+            Visuals.edit { cfg -> cfg.copy(handShaderMode = modes[(cfg.handShaderMode.ordinal + 1) % modes.size]) }
+        }
+        y = visualColorRow(draw, y, "Color 1", "Primary color.", c.handColor1, false) { color ->
+            Visuals.edit { it.copy(handColor1 = color) }
+        }
+        y = visualColorRow(draw, y, "Color 2", "Second color for two-tone styles.", c.handColor2, false) { color ->
+            Visuals.edit { it.copy(handColor2 = color) }
+        }
+        val speeds = listOf(0.5f, 1f, 2f, 3f)
+        y = visualChipRow(
+            draw, y, "Speed", "Animation speed.",
+            listOf("0.5x", "1x", "2x", "3x"),
+            nearestIndex(speeds, c.handShaderSpeed),
+            false,
+        ) { index -> Visuals.edit { it.copy(handShaderSpeed = speeds[index]) } }
+        val opacities = listOf(0.25f, 0.5f, 0.85f, 1f)
+        y = visualChipRow(
+            draw, y, "Opacity", "How strongly the effect replaces the hand's colors.",
+            listOf("25%", "50%", "85%", "100%"),
+            nearestIndex(opacities, c.handShaderOpacity),
+            true,
+        ) { index -> Visuals.edit { it.copy(handShaderOpacity = opacities[index]) } }
+        return y + 8
+    }
+
+    private fun drawVisualsEffects(draw: MenuDraw, startY: Int): Int {
+        val c = Visuals.config()
+        val helpY = pageHelp(draw, startY, "Client-only trail, hat and floating particles around you. Everything is off until you turn it on.")
+        var y = section(draw, helpY, "Trail", "A movement trail behind you, drawn as a ribbon or particles.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Trail", "Draws a trail as you move.", { it.trail }) { cfg, v -> cfg.copy(trail = v) }),
+        )
+        val styles = TrailStyle.entries
+        y = visualCycleRow(draw, y, "Trail style", "Click to cycle through the trail styles.", c.trailStyle.label, false) {
+            Visuals.edit { cfg -> cfg.copy(trailStyle = styles[(cfg.trailStyle.ordinal + 1) % styles.size]) }
+        }
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Trail rainbow", "Cycles the trail through the rainbow.", { it.trailRainbow }) { cfg, v -> cfg.copy(trailRainbow = v) }),
+        )
+        y = visualColorRow(draw, y, "Trail color", "Used when rainbow is off.", c.trailColor, false) { color ->
+            Visuals.edit { it.copy(trailColor = color) }
+        }
+        y = visualChipRow(
+            draw, y, "Trail length", "Number of recorded positions.",
+            listOf("10", "20", "30", "60"),
+            nearestIndex(listOf(10f, 20f, 30f, 60f), c.trailLength.toFloat()),
+            false,
+        ) { index -> Visuals.edit { it.copy(trailLength = listOf(10, 20, 30, 60)[index]) } }
+        y = visualChipRow(
+            draw, y, "Trail width", "Line thickness.",
+            listOf("1", "2", "3", "5"),
+            nearestIndex(listOf(1f, 2f, 3f, 5f), c.trailWidth),
+            true,
+        ) { index -> Visuals.edit { it.copy(trailWidth = listOf(1f, 2f, 3f, 5f)[index]) } }
+        y += 8
+        y = section(draw, y, "China hat", "A cone floating above your head.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("China hat", "Shows a cone above your head.", { it.chinaHat }) { cfg, v -> cfg.copy(chinaHat = v) }),
+        )
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Hat rainbow", "Cycles the hat through the rainbow.", { it.chinaHatRainbow }) { cfg, v -> cfg.copy(chinaHatRainbow = v) }),
+        )
+        y = visualColorRow(draw, y, "Hat color", "Used when rainbow is off.", c.chinaHatColor, false) { color ->
+            Visuals.edit { it.copy(chinaHatColor = color) }
+        }
+        y = visualChipRow(
+            draw, y, "Hat size", "Cone radius in blocks.",
+            listOf("0.5", "0.7", "1.0"),
+            nearestIndex(listOf(0.5f, 0.7f, 1f), c.chinaHatSize),
+            false,
+        ) { index -> Visuals.edit { it.copy(chinaHatSize = listOf(0.5f, 0.7f, 1f)[index]) } }
+        y = visualChipRow(
+            draw, y, "Hat height", "Cone height in blocks.",
+            listOf("0.2", "0.3", "0.5"),
+            nearestIndex(listOf(0.2f, 0.3f, 0.5f), c.chinaHatHeight),
+            true,
+        ) { index -> Visuals.edit { it.copy(chinaHatHeight = listOf(0.2f, 0.3f, 0.5f)[index]) } }
+        y += 8
+        y = section(draw, y, "Ambient particles", "Floating particles spawned around you.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(VisualToggle("Ambient particles", "Spawns client-only particles around you.", { it.ambientParticles }) { cfg, v -> cfg.copy(ambientParticles = v) }),
+        )
+        val ambientStyles = AmbientStyle.entries
+        y = visualCycleRow(draw, y, "Particle style", "Click to cycle through the particle styles.", c.ambientStyle.label, false) {
+            Visuals.edit { cfg -> cfg.copy(ambientStyle = ambientStyles[(cfg.ambientStyle.ordinal + 1) % ambientStyles.size]) }
+        }
+        y = visualChipRow(
+            draw, y, "Density", "Particles spawned per second.",
+            listOf("2", "6", "12", "20"),
+            nearestIndex(listOf(2f, 6f, 12f, 20f), c.ambientDensity.toFloat()),
+            false,
+        ) { index -> Visuals.edit { it.copy(ambientDensity = listOf(2, 6, 12, 20)[index]) } }
+        y = visualChipRow(
+            draw, y, "Radius", "Spawn radius around you in blocks.",
+            listOf("2", "3", "5", "8"),
+            nearestIndex(listOf(2f, 3f, 5f, 8f), c.ambientRadius),
+            true,
+        ) { index -> Visuals.edit { it.copy(ambientRadius = listOf(2f, 3f, 5f, 8f)[index]) } }
+        return y + 8
+    }
+
+    private fun resetModel(c: VisualsConfig): VisualsConfig {
+        val d = VisualsConfig()
+        return c.copy(
+            dinnerbone = d.dinnerbone,
+            spinbot = d.spinbot,
+            spinSpeed = d.spinSpeed,
+            modelScaleX = d.modelScaleX,
+            modelScaleY = d.modelScaleY,
+            modelScaleZ = d.modelScaleZ,
+        )
+    }
+
+    private fun drawVisualsModel(draw: MenuDraw, startY: Int): Int {
+        val c = Visuals.config()
+        val helpY = pageHelp(draw, startY, "Only your own model, seen in third person (F5).")
+        var y = section(draw, helpY, "Model", "Flip, spin and resize your player model.")
+        y = visualToggles(
+            draw,
+            y,
+            listOf(
+                VisualToggle("Upside down (Dinnerbone)", "Flips your model upside down.", { it.dinnerbone }) { cfg, v -> cfg.copy(dinnerbone = v) },
+                VisualToggle("Spin", "Rotates your model every tick.", { it.spinbot }) { cfg, v -> cfg.copy(spinbot = v) },
+            ),
+        )
+        y = visualChipRow(
+            draw, y, "Spin speed", "Degrees per tick.",
+            listOf("5", "10", "20", "40"),
+            nearestIndex(listOf(5f, 10f, 20f, 40f), c.spinSpeed),
+            false,
+        ) { index -> Visuals.edit { it.copy(spinSpeed = listOf(5f, 10f, 20f, 40f)[index]) } }
+        y = section(draw, y, "Scale", "Size per axis. 1 is vanilla.")
+        y = visualSteps(
+            draw,
+            y,
+            listOf(
+                VisualStep("Scale X", 0.05f, 0.25f, 2f, { it.modelScaleX }) { cfg, v -> cfg.copy(modelScaleX = v) },
+                VisualStep("Scale Y", 0.05f, 0.25f, 2f, { it.modelScaleY }) { cfg, v -> cfg.copy(modelScaleY = v) },
+                VisualStep("Scale Z", 0.05f, 0.25f, 2f, { it.modelScaleZ }) { cfg, v -> cfg.copy(modelScaleZ = v) },
+            ),
+        )
+        y = actionRow(draw, y, "Reset model", "Restores the flip, spin and scale to defaults.", true) { cy ->
+            draw.button("Reset", rightX(90), cy, ButtonStyle.GHOST) {
+                Visuals.edit { resetModel(it) }
+            }
+        }
+        return y + 8
+    }
+
+    private fun drawPerformance(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Smoother frames and lower video cost.")
+        var y = section(
+            draw,
+            helpY,
+            "Performance",
+            "Motion blur blends the previous frame into the current one. The max-FPS preset lowers the video settings that cost the most frames.",
+        )
+        val cullingOn = Culling.config.enabled
+        y = grouped(draw, y, 7) { rowY, index ->
+            when (index) {
+                0 -> toggleRow(
+                    draw,
+                    rowY,
+                    "Motion blur",
+                    "Blends the last frame in. One texture copy per frame, no Fast Render trade-off.",
+                    MotionBlur.config.enabled,
+                    last = false,
+                ) { MotionBlur.setEnabled(!MotionBlur.config.enabled) }
+                1 -> actionRow(draw, rowY, "Blur strength", "${(MotionBlur.config.strength * 100).toInt()}%", last = false) { cy ->
+                    var x = rightX(0)
+                    MotionBlurConfig.STRENGTH_PRESETS.asReversed().forEach { value ->
+                        val label = "${(value * 100).toInt()}%"
+                        x -= draw.measure(label, draw.buttonFont) + 24
+                        draw.chip(label, x, cy, kotlin.math.abs(MotionBlur.config.strength - value) < 0.001f) {
+                            MotionBlur.setStrength(value)
+                        }
+                        x -= 6
+                    }
+                }
+                2 -> actionRow(
+                    draw,
+                    rowY,
+                    "Max FPS preset",
+                    "Lower video settings that cost the most FPS, keep it looking decent. Your old settings are saved.",
+                    last = false,
+                ) { cy ->
+                    val applyX = rightX(90)
+                    if (PerformancePreset.hasBackup) {
+                        draw.button("Restore", applyX - 6 - 80, cy, ButtonStyle.GHOST) {
+                            toast(PerformancePreset.restore())
+                        }
+                    }
+                    draw.button("Apply", applyX, cy, ButtonStyle.PRIMARY) {
+                        toast(PerformancePreset.apply())
+                    }
+                }
+                3 -> actionRow(
+                    draw,
+                    rowY,
+                    "Frame generation",
+                    "Skips every other world render and turns the last frame to match your mouse. Smoother looking around; fast strafing can wobble at the edges.",
+                    last = false,
+                ) { cy ->
+                    var x = rightX(0)
+                    FrameGenConfig.MODES.asReversed().forEach { mode ->
+                        val label = frameGenLabel(mode)
+                        x -= draw.measure(label, draw.buttonFont) + 24
+                        draw.chip(label, x, cy, FrameGen.config.generatedPerReal == mode) {
+                            FrameGen.setGeneratedPerReal(mode)
+                        }
+                        x -= 6
+                    }
+                }
+                4 -> toggleRow(
+                    draw,
+                    rowY,
+                    "Adaptive frame gen",
+                    "Only generates frames when your real FPS is below your monitor's refresh rate.",
+                    FrameGen.config.adaptive,
+                    last = false,
+                ) { FrameGen.setAdaptive(!FrameGen.config.adaptive) }
+                5 -> toggleRow(
+                    draw,
+                    rowY,
+                    "Performance HUD",
+                    "FPS, 1% lows, frame time, frame-gen split and culled counts.",
+                    PerfHud.enabled,
+                    last = false,
+                ) { PerfHud.setEnabled(!PerfHud.enabled) }
+                else -> toggleRow(
+                    draw,
+                    rowY,
+                    "Smart culling",
+                    "Skips mobs, chests, heads, name tags and particles you can't see or are far away.",
+                    cullingOn,
+                    last = !cullingOn,
+                ) { Culling.setEnabled(!Culling.config.enabled) }
+            }
+        }
+        if (cullingOn) {
+            y = grouped(draw, y, 4) { rowY, index ->
+                val last = index == 3
+                when (index) {
+                    0 -> toggleRow(draw, rowY, "Hidden & far entities", "Skips mobs and players that are out of view or far away.", Culling.config.entities, last = false) {
+                        Culling.setEntities(!Culling.config.entities)
+                    }
+                    1 -> toggleRow(draw, rowY, "Far block entities", "Skips chests, heads and signs that are far away.", Culling.config.blockEntities, last = false) {
+                        Culling.setBlockEntities(!Culling.config.blockEntities)
+                    }
+                    2 -> toggleRow(draw, rowY, "Far particles", "Skips particles that are far away.", Culling.config.particles, last = false) {
+                        Culling.setParticles(!Culling.config.particles)
+                    }
+                    else -> toggleRow(draw, rowY, "Far name tags", "Skips name tags that are far away.", Culling.config.nameTags, last = last) {
+                        Culling.setNameTags(!Culling.config.nameTags)
+                    }
+                }
+            }
+        }
+        return y
+    }
+
+    private fun frameGenLabel(mode: Int): String = when (mode) {
+        0 -> "Off"
+        1 -> "2×"
+        2 -> "3×"
+        else -> "$mode×"
+    }
+
     private fun drawCombat(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Press Q while holding a weapon to cast your ultimate.")
         val settings = TickTimers.settings.dropUltimate
         var y = section(
             draw,
-            startY,
+            helpY,
             "Class ability drop",
             "In dungeons, pressing your drop key first selects the ability slot so the class ultimate fires, then restores your held slot. The held item is not thrown.",
         )
@@ -1387,11 +2941,12 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
     }
 
-    private fun drawCarries(draw: MenuDraw, startY: Int): Int {
+    private fun drawCarriesCounter(draw: MenuDraw, startY: Int): Int {
         val settings = TickTimers.settings.slayer
+        val helpY = pageHelp(draw, startY, "Counts boss kills for carried players. Auto count adds 1 when their boss dies near you.")
         var y = section(
             draw,
-            startY,
+            helpY,
             "Slayer carrier",
             "Track a count per carried player. Auto-counts when that player's slayer boss dies near you.",
         )
@@ -1420,20 +2975,6 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         y = grouped(draw, y, 2) { rowY, index ->
             if (index == 0) {
-                bindRow(draw, rowY, "+1 key", "slayerCarryPlusKey", settings.plusKey, last = false)
-            } else {
-                bindRow(draw, rowY, "-1 key", "slayerCarryMinusKey", settings.minusKey, last = true)
-            }
-        }
-        y = grouped(draw, y, 2) { rowY, index ->
-            if (index == 0) {
-                bindRow(draw, rowY, "Next player key", "slayerCarryNextKey", settings.cycleNextKey, last = false)
-            } else {
-                bindRow(draw, rowY, "Previous player key", "slayerCarryPrevKey", settings.cyclePrevKey, last = true)
-            }
-        }
-        y = grouped(draw, y, 2) { rowY, index ->
-            if (index == 0) {
                 toggleRow(
                     draw,
                     rowY,
@@ -1450,7 +2991,257 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y + 6, "Players", "Auto counts only for these names (case-insensitive).")
+        return y
+    }
+
+    private fun drawCarriesKeys(draw: MenuDraw, startY: Int): Int {
+        val settings = TickTimers.settings.slayer
+        val helpY = pageHelp(draw, startY, "Keys change the selected player's count without the mouse.")
+        var y = helpY
+        y = grouped(draw, y, 2) { rowY, index ->
+            if (index == 0) {
+                bindRow(draw, rowY, "+1 key", "slayerCarryPlusKey", settings.plusKey, last = false)
+            } else {
+                bindRow(draw, rowY, "-1 key", "slayerCarryMinusKey", settings.minusKey, last = true)
+            }
+        }
+        y = grouped(draw, y, 2) { rowY, index ->
+            if (index == 0) {
+                bindRow(draw, rowY, "Next player key", "slayerCarryNextKey", settings.cycleNextKey, last = false)
+            } else {
+                bindRow(draw, rowY, "Previous player key", "slayerCarryPrevKey", settings.cyclePrevKey, last = true)
+            }
+        }
+        return y
+    }
+
+    private fun drawBossAim(draw: MenuDraw, startY: Int): Int {
+        val c = BossAim.config()
+        val warnY = note(draw, startY, "Turns your camera for you. Aim assistance can be against server rules — use at your own risk.")
+        val helpY = pageHelp(draw, warnY, "Smoothly turns your camera toward your own slayer boss with curved, never-instant motion.")
+        var y = infoRow(draw, helpY, "Status", if (BossAim.engaged()) "Aiming" else "Idle", last = false)
+        y += 8
+        y = section(draw, y, "Activation", "Hold left click, hold a key, or toggle a key to start aiming.")
+        val activations = AimActivation.entries
+        y = visualChipRow(
+            draw, y, "Activation", "What starts aiming at the boss.",
+            activations.map { it.label }, activations.indexOf(c.activation), last = false,
+        ) { index -> BossAim.edit { it.copy(activation = activations[index]) } }
+        y = section(draw, y, "Aim key", "Used by Hold key and Toggle key. Escape unbinds.")
+        y = bindRow(draw, y, "Aim key", "aimKey", c.key, last = false)
+        y += 8
+        y = section(draw, y, "Lazy aim", "Aim at a drifting point inside the hitbox instead of locking onto its center.")
+        y = toggleRow(draw, y, "Lazy aim", "Drift around inside the hitbox.", c.lazyAim, last = false) {
+            BossAim.edit { it.copy(lazyAim = !it.lazyAim) }
+        }
+        y = toggleRow(
+            draw, y, "Dead zone", "Don't correct while the crosshair is already on the target.", c.lazyDeadzone,
+            last = false,
+        ) { BossAim.edit { it.copy(lazyDeadzone = !it.lazyDeadzone) } }
+        y = sliderRow(
+            draw, y, "Drift", "How far from the aim point the lazy point may wander, as a share of the hitbox.",
+            c.lazyStrength, 0f, 1f, 0.05f, last = false, format = { "${(it * 100).toInt()}%" },
+        ) { v -> BossAim.edit { it.copy(lazyStrength = v) } }
+        y += 8
+        y = section(
+            draw, y, "S-tap",
+            "While aiming and attacking, tap S after each hit. Never backs into a pit or fire, and waits out Quazii's beam.",
+        )
+        y = toggleRow(draw, y, "S-tap", "Tap S while attacking the aimed target.", c.strafe, last = false) {
+            BossAim.edit { it.copy(strafe = !it.strafe) }
+        }
+        y = sliderRow(
+            draw, y, "Tap length", "How long each tap holds S, in ticks (20 ticks = 1 second).",
+            c.strafeTapTicks.toFloat(), AimConfig.MIN_STRAFE_TAP_TICKS.toFloat(), AimConfig.MAX_STRAFE_TAP_TICKS.toFloat(), 1f,
+            last = false, format = { "${it.toInt()} t" },
+        ) { v -> BossAim.edit { it.copy(strafeTapTicks = v.toInt()) } }
+        y = note(
+            draw, y,
+            "Presses your back key, which is macro-like. Pits are only known while the fire pit helper is on; holding S yourself takes over.",
+        )
+        y += 8
+        y = section(
+            draw, y, "Lock-on (debug)",
+            "Press while looking at any mob to lock on; aims until it dies or you press again. Escape unbinds.",
+        )
+        y = bindRow(draw, y, "Lock-on key", "aimLockKey", c.lockKey, last = false)
+        y += 8
+        y = section(draw, y, "Motion", "How fast the camera turns and how long one turn may take.")
+        y = sliderRow(
+            draw, y, "Speed", "Maximum turn speed in degrees per second.",
+            c.speedDegPerSec, AimConfig.MIN_SPEED_DEG_PER_SEC, AimConfig.MAX_SPEED_DEG_PER_SEC, 10f,
+            last = false, format = { "${it.toInt()} °/s" },
+        ) { v -> BossAim.edit { it.copy(speedDegPerSec = v) } }
+        y = sliderRow(
+            draw, y, "Min duration", "Shortest time a turn takes, in milliseconds.",
+            c.minDurationMs.toFloat(), AimConfig.MIN_MIN_DURATION_MS.toFloat(), AimConfig.MAX_MIN_DURATION_MS.toFloat(), 10f,
+            last = false, format = { "${it.toInt()} ms" },
+        ) { f ->
+            val v = f.toInt()
+            BossAim.edit { it.copy(minDurationMs = v, maxDurationMs = maxOf(it.maxDurationMs, v)) }
+        }
+        y = sliderRow(
+            draw, y, "Max duration", "Longest time a turn may take, in milliseconds.",
+            c.maxDurationMs.toFloat(), AimConfig.MIN_MAX_DURATION_MS.toFloat(), AimConfig.MAX_MAX_DURATION_MS.toFloat(), 50f,
+            last = false, format = { "${it.toInt()} ms" },
+        ) { f ->
+            val v = f.toInt()
+            BossAim.edit { it.copy(maxDurationMs = v, minDurationMs = minOf(it.minDurationMs, v)) }
+        }
+        y = sliderRow(
+            draw, y, "Curve", "Bends the path away from a straight line. 0 is straight.",
+            c.curve, AimConfig.MIN_CURVE, AimConfig.MAX_CURVE, 0.05f, last = false, format = { "%.2f".format(it) },
+        ) { v -> BossAim.edit { it.copy(curve = v) } }
+        val easings = AimEasing.entries
+        y = actionRow(draw, y, "Easing", "Shape of the turn. Click to cycle.", last = false) { cy ->
+            draw.button(c.easing.label, rightX(140), cy, ButtonStyle.GHOST) {
+                val next = easings[(easings.indexOf(BossAim.config().easing) + 1) % easings.size]
+                BossAim.edit { it.copy(easing = next) }
+            }
+        }
+        y += 8
+        y = section(draw, y, "Targeting", "Which point on the boss to aim at, and which targets count.")
+        val points = AimPoint.entries
+        y = visualChipRow(
+            draw, y, "Aim point", "Where on the target the camera settles.",
+            points.map { it.label }, points.indexOf(c.aimPoint), last = false,
+        ) { index -> BossAim.edit { it.copy(aimPoint = points[index]) } }
+        y = sliderRow(
+            draw, y, "Range", "Targets farther than this, in blocks, are ignored.",
+            c.maxRange, AimConfig.MIN_MAX_RANGE, AimConfig.MAX_MAX_RANGE, 1f, last = false, format = { "${it.toInt()} blocks" },
+        ) { v -> BossAim.edit { it.copy(maxRange = v) } }
+        y = sliderRow(
+            draw, y, "FOV", "Targets outside this cone around the crosshair are ignored.",
+            c.fovLimit, AimConfig.MIN_FOV_LIMIT, AimConfig.MAX_FOV_LIMIT, 5f, last = false, format = { "${it.toInt()}°" },
+        ) { v -> BossAim.edit { it.copy(fovLimit = v) } }
+        y = toggleRow(draw, y, "Own slayer boss", "Aim at your own slayer boss.", c.ownSlayerBoss, last = false) {
+            BossAim.edit { it.copy(ownSlayerBoss = !it.ownSlayerBoss) }
+        }
+        y = toggleRow(draw, y, "Require line of sight", "Only aim at targets you can see.", c.requireLineOfSight, last = false) {
+            BossAim.edit { it.copy(requireLineOfSight = !it.requireLineOfSight) }
+        }
+        y = toggleRow(draw, y, "Highlight target", "Mark the target that is being aimed at.", c.highlightTarget, last = false) {
+            BossAim.edit { it.copy(highlightTarget = !it.highlightTarget) }
+        }
+        y += 8
+        y = section(draw, y, "Extra targets", "Name fragments matched against mob and hologram names, for other bosses.")
+        y = actionRow(draw, y, "Extra targets", "Editing comes later.", last = true) { cy ->
+            val clearX = rightX(72)
+            draw.button("Clear", clearX, cy, ButtonStyle.GHOST) {
+                BossAim.edit { it.copy(extraTargets = emptyList()) }
+            }
+            val listX = innerLeft() + 180
+            val raw = if (c.extraTargets.isEmpty()) "none" else c.extraTargets.joinToString(", ")
+            val text = draw.fit(raw, clearX - 14 - listX, draw.smallFont)
+            draw.text(text, listX, cy + 6, draw.palette.secondary, draw.smallFont)
+        }
+        return y
+    }
+
+    private fun drawFirePits(draw: MenuDraw, startY: Int): Int {
+        val c = FirePit.config()
+        val helpY = pageHelp(draw, startY, "Watches the blocks around you during the Inferno Demonlord fight and marks the pit columns.")
+        var y = section(
+            draw,
+            helpY,
+            "Blaze fire pits",
+            "Notify warns when you stand in a pit column. Walk presses movement keys to take you out.",
+        )
+        val modes = EscapeMode.entries
+        y = visualChipRow(
+            draw, y, "Mode", "How the helper reacts inside a pit.",
+            listOf("Notify", "Walk"), modes.indexOf(c.mode), last = false,
+        ) { index -> FirePit.edit { it.copy(mode = modes[index]) } }
+        if (c.mode == EscapeMode.WALK) {
+            y = note(
+                draw,
+                y,
+                "Presses your movement keys for you — this is macro-like and can be against server rules. Pressing any movement key cancels it.",
+            )
+        }
+        y = toggleRow(draw, y, "Only in boss fight", "Run the helper only while the Inferno Demonlord is nearby.", c.onlyInBossFight, last = false) {
+            FirePit.edit { it.copy(onlyInBossFight = !it.onlyInBossFight) }
+        }
+        y = toggleRow(draw, y, "Sound", "Play a sound when you enter a pit.", c.sound, last = false) {
+            FirePit.edit { it.copy(sound = !it.sound) }
+        }
+        y = sliderRow(
+            draw, y, "Scan radius", "Columns scanned around you, in blocks.",
+            c.scanRadius.toFloat(), FirePitConfig.MIN_SCAN_RADIUS.toFloat(), FirePitConfig.MAX_SCAN_RADIUS.toFloat(), 1f,
+            last = false, format = { "${it.toInt()} blocks" },
+        ) { v -> FirePit.edit { it.copy(scanRadius = v.toInt()) } }
+        y = sliderRow(
+            draw, y, "Margin", "Edge distance that still counts as inside the pit, in blocks.",
+            c.margin, FirePitConfig.MIN_MARGIN, FirePitConfig.MAX_MARGIN, 0.1f, last = false, format = { "%.1f".format(it) },
+        ) { v -> FirePit.edit { it.copy(margin = v) } }
+        y = sliderRow(
+            draw, y, "Fire avoid radius", "Blocks kept clear around every fire block; escape spots stay this far away.",
+            c.fireRadius, FirePitConfig.MIN_FIRE_RADIUS, FirePitConfig.MAX_FIRE_RADIUS, 0.5f, last = false,
+            format = { if (it == 0f) "Off" else "%.1f".format(it) },
+        ) { v -> FirePit.edit { it.copy(fireRadius = v) } }
+        y = toggleRow(
+            draw, y, "Hard avoid",
+            "Fire (and its avoid radius) acts like a wall you can't walk into. Client movement only; needs loader 1.0.3.43.",
+            c.hardAvoid, last = false,
+        ) { FirePit.edit { it.copy(hardAvoid = !it.hardAvoid) } }
+        y = sliderRow(
+            draw, y, "Max escape distance", "Longest escape path considered, in blocks.",
+            c.maxEscapeDistance, FirePitConfig.MIN_MAX_ESCAPE_DISTANCE, FirePitConfig.MAX_MAX_ESCAPE_DISTANCE, 0.5f,
+            last = false, format = { "%.1f".format(it) },
+        ) { v -> FirePit.edit { it.copy(maxEscapeDistance = v) } }
+        y = sliderRow(
+            draw, y, "Walk timeout", "How long a walk-out may run before it stops.",
+            c.walkTimeoutMs.toFloat(), FirePitConfig.MIN_WALK_TIMEOUT_MS.toFloat(), FirePitConfig.MAX_WALK_TIMEOUT_MS.toFloat(), 100f,
+            last = false, format = { "%.1fs".format(it / 1000f) },
+        ) { v -> FirePit.edit { it.copy(walkTimeoutMs = v.toInt()) } }
+        y = actionRow(draw, y, "Pit blocks", "Block ids that mark a pit. Reset restores the defaults.", last = false) { cy ->
+            val resetX = rightX(72)
+            draw.button("Reset", resetX, cy, ButtonStyle.GHOST) {
+                FirePit.edit { it.copy(pitBlocks = FirePitConfig().pitBlocks) }
+            }
+            val listX = innerLeft() + 180
+            val text = draw.fit(c.pitBlocks.joinToString(", "), resetX - 14 - listX, draw.smallFont)
+            draw.text(text, listX, cy + 6, draw.palette.secondary, draw.smallFont)
+        }
+        y = toggleRow(draw, y, "Debug log", "Writes block changes around you to the log.", c.debugLog, last = false) {
+            FirePit.edit { it.copy(debugLog = !it.debugLog) }
+        }
+        y = note(draw, y, "Logs block changes around you to latest.log during the fight, to find which block marks a pit.")
+        y += 8
+        y = section(
+            draw, y, "Quazii beam",
+            "Quazii's beam spins around its body and heals it 20% per hit. Works without the pit helper.",
+        )
+        val beamModes = BeamDodge.entries
+        y = visualChipRow(
+            draw, y, "Mode",
+            "Warn counts down to the next sweep. Jump also jumps over it in place and lets go of movement until you land.",
+            beamModes.map { it.label }, beamModes.indexOf(c.beamDodge), last = false,
+        ) { index -> FirePit.edit { it.copy(beamDodge = beamModes[index]) } }
+        y = sliderRow(
+            draw, y, "Jump below health", "Only jump while your health is under this; at 100% it jumps every sweep.",
+            c.beamDodgeBelowHp.toFloat(), FirePitConfig.MIN_BEAM_DODGE_BELOW_HP.toFloat(),
+            FirePitConfig.MAX_BEAM_DODGE_BELOW_HP.toFloat(), 5f, last = false,
+            format = { if (it >= FirePitConfig.MAX_BEAM_DODGE_BELOW_HP) "Always" else "${it.toInt()}%" },
+        ) { v -> FirePit.edit { it.copy(beamDodgeBelowHp = v.toInt()) } }
+        y = sliderRow(
+            draw, y, "Jump earlier", "Ticks earlier than the measured timing; raise it if you still get hit on the way up.",
+            c.beamJumpEarlyTicks.toFloat(), 0f, FirePitConfig.MAX_BEAM_JUMP_EARLY_TICKS.toFloat(), 1f, last = false,
+            format = { if (it == 0f) "Off" else "${it.toInt()} t" },
+        ) { v -> FirePit.edit { it.copy(beamJumpEarlyTicks = v.toInt()) } }
+        y = toggleRow(
+            draw, y, "Stay out of Quazii",
+            "Quazii's hitbox acts like a wall and you get eased out if it walks into you; the beam hits repeatedly inside it.",
+            c.avoidQuaziiBody, last = false,
+        ) { FirePit.edit { it.copy(avoidQuaziiBody = !it.avoidQuaziiBody) } }
+        y = note(draw, y, "Presses your jump key for you, which is macro-like. Debug log writes one line per sweep.")
+        return y
+    }
+
+    private fun drawCarriesPlayers(draw: MenuDraw, startY: Int): Int {
+        val settings = TickTimers.settings.slayer
+        val helpY = pageHelp(draw, startY, "Add carried players and set their target counts.")
+        var y = section(draw, helpY, "Players", "Auto counts only for these names (case-insensitive).")
         y = actionBar(draw, y, "Add a player") { cy ->
             val nameId = "carry:newName"
             val targetId = "carry:newTarget"
@@ -1505,7 +3296,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         val selected = settings.selectedPlayer()
         if (selected != null) {
-            y = section(draw, y + 6, "Selected: ${selected.name}", "Keys and /icantpy carry +1/-1 change this player.")
+            y = section(draw, y + SECTION_GAP, "Selected: ${selected.name}", "Keys and /icantpy carry +1/-1 change this player.")
             y = grouped(draw, y, 2) { rowY, index ->
                 if (index == 0) {
                     actionRow(draw, rowY, "Count", "Current carries for this player.", last = false) { cy ->
@@ -1554,46 +3345,18 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
     }
 
-    private fun drawGui(draw: MenuDraw, startY: Int): Int {
+    private fun drawAppearanceTheme(draw: MenuDraw, startY: Int): Int {
         val look = TickTimers.settings.look
-        var y = section(draw, startY, "Payload", "Same as /icantpy reload. Closes this menu first.")
-        y = grouped(draw, y, 1) { rowY, _ ->
-            actionRow(draw, rowY, "Reload", "Fetch and load the current payload without restarting the game.", last = true) { cy ->
-                draw.button("Reload", rightX(64), cy, ButtonStyle.PRIMARY) {
-                    IcantpyGui.requestPayloadReload()
-                }
-            }
-        }
-        y = section(draw, y, "Layout", "Three shells. Same settings, different chrome.")
-        y = pickRow(draw, y, 72) { x, w, h, index ->
-            val id = GuiLayoutId.entries[index]
-            draw.pickCard(id.label(), id.caption(), x, y, w, h, look.layout == id) {
-                TickTimers.updateLook { it.copy(layout = id) }
-            }
-        }
-        y = section(draw, y, "Theme", "Colors for the panel. Accent below can override the highlight.")
+        val helpY = pageHelp(draw, startY, "Colors for the window and the accent highlight.")
+        var y = helpY
+        y = section(draw, y + SECTION_GAP, "Theme", "Colors for the panel. Accent below can override the highlight.")
         y = pickRow(draw, y, 64) { x, w, h, index ->
             val id = GuiThemeId.entries[index]
             draw.pickCard(id.label(), id.caption(), x, y, w, h, look.theme == id) {
                 TickTimers.updateLook { it.copy(theme = id) }
             }
         }
-        y = section(draw, y, "Typeface", "System fonts. Pick one that stays sharp at your GUI scale.")
-        y = grouped(draw, y, 2) { rowY, index ->
-            if (index == 0) {
-                actionRow(draw, rowY, look.font.label(), "Previous / next family.", last = false) { cy ->
-                    val nextW = draw.button("Next", rightX(52), cy, ButtonStyle.PRIMARY) {
-                        TickTimers.updateLook { it.copy(font = it.font.next()) }
-                    }
-                    draw.button("Prev", rightX(52) - nextW - 8, cy, ButtonStyle.GHOST) {
-                        TickTimers.updateLook { it.copy(font = it.font.previous()) }
-                    }
-                }
-            } else {
-                infoRow(draw, rowY, "Preview", "Storm Pad  12.4s", last = true)
-            }
-        }
-        y = section(draw, y, "Accent", "Leave hex empty to use the theme color. Live while you type.")
+        y = section(draw, y + SECTION_GAP, "Accent", "Leave hex empty to use the theme color. Live while you type.")
         y = grouped(draw, y, 2) { rowY, index ->
             if (index == 0) {
                 val hexId = "look:accent"
@@ -1618,7 +3381,29 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 rowY + metrics.row
             }
         }
-        y = section(draw, y, "Corners", "0 is square. Default is 2.")
+        return y
+    }
+
+    private fun drawAppearanceTextShape(draw: MenuDraw, startY: Int): Int {
+        val look = TickTimers.settings.look
+        val helpY = pageHelp(draw, startY, "Font, corner radius, and control rounding.")
+        var y = helpY
+        y = section(draw, y + SECTION_GAP, "Typeface", "System fonts. Pick one that stays sharp at your GUI scale.")
+        y = grouped(draw, y, 2) { rowY, index ->
+            if (index == 0) {
+                actionRow(draw, rowY, look.font.label(), "Previous / next family.", last = false) { cy ->
+                    val nextW = draw.button("Next", rightX(52), cy, ButtonStyle.PRIMARY) {
+                        TickTimers.updateLook { it.copy(font = it.font.next()) }
+                    }
+                    draw.button("Prev", rightX(52) - nextW - 8, cy, ButtonStyle.GHOST) {
+                        TickTimers.updateLook { it.copy(font = it.font.previous()) }
+                    }
+                }
+            } else {
+                infoRow(draw, rowY, "Preview", "Storm Pad  12.4s", last = true)
+            }
+        }
+        y = section(draw, y + SECTION_GAP, "Corners", "0 is square. Default is 2.")
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Radius", "Applied to the window and cards.", last = true) { cy ->
                 var x = rightX(0)
@@ -1632,7 +3417,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y, "Controls", "Buttons, toggles, fields, chips, and swatches can be rounded independently.")
+        y = section(draw, y + SECTION_GAP, "Controls", "Buttons, toggles, fields, chips, and swatches can be rounded independently.")
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Radius", "0 is square. Higher values make interactive controls rounder.", last = true) { cy ->
                 var x = rightX(0)
@@ -1646,7 +3431,21 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y, "World", "Vanilla menu blur behind the panel. Off keeps the game sharp.")
+        return y
+    }
+
+    private fun drawAppearanceAdvanced(draw: MenuDraw, startY: Int): Int {
+        val look = TickTimers.settings.look
+        val helpY = pageHelp(draw, startY, "Reload the payload, world blur, and reset the look.")
+        var y = section(draw, helpY, "Payload", "Same as /icantpy reload. Closes this menu first.")
+        y = grouped(draw, y, 1) { rowY, _ ->
+            actionRow(draw, rowY, "Reload", "Fetch and load the current payload without restarting the game.", last = true) { cy ->
+                draw.button("Reload", rightX(64), cy, ButtonStyle.PRIMARY) {
+                    IcantpyGui.requestPayloadReload()
+                }
+            }
+        }
+        y = section(draw, y + SECTION_GAP, "World", "Vanilla menu blur behind the panel. Off keeps the game sharp.")
         y = grouped(draw, y, 1) { rowY, _ ->
             toggleRow(
                 draw, rowY, "Background blur",
@@ -1656,7 +3455,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             ) { TickTimers.updateLook { it.copy(backgroundBlur = !it.backgroundBlur) } }
         }
         return grouped(draw, y, 1) { rowY, _ ->
-            actionRow(draw, rowY, "Reset look", "Rail, Midnight, Segoe, radius 2.", last = true) { cy ->
+            actionRow(draw, rowY, "Reset look", "Rail, Midnight, Segoe, radius 12, blur on.", last = true) { cy ->
                 draw.button("Reset", rightX(56), cy, ButtonStyle.DANGER) {
                     fields.remove("look:accent")
                     TickTimers.updateLook { GuiLookSettings() }
@@ -1676,9 +3475,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return y + cardH + 12
     }
 
-    private fun drawTimers(draw: MenuDraw, startY: Int): Int {
+    private fun drawClocksDisplay(draw: MenuDraw, startY: Int): Int {
         val settings = TickTimers.settings
-        var y = section(draw, startY, "Readout", "How the numbers look on your HUD.")
+        val helpY = pageHelp(draw, startY, "Number format and the HUD editor for dungeon clocks.")
+        var y = section(draw, helpY, "Readout", "How the numbers look on your HUD.")
         y = grouped(draw, y, 3) { rowY, index ->
             when (index) {
                 0 -> toggleRow(
@@ -1708,7 +3508,13 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y + 6, "Mechanic timers", "F7/M7 mechanics plus the shared F1-F7 timer panel.")
+        return y
+    }
+
+    private fun drawClocksMechanics(draw: MenuDraw, startY: Int): Int {
+        val settings = TickTimers.settings
+        val helpY = pageHelp(draw, startY, "Storm, devices, and other mechanic timers. Each row toggles its HUD.")
+        var y = section(draw, helpY, "Mechanic timers", "F7/M7 mechanics plus the shared F1-F7 timer panel.")
         y = grouped(draw, y, HUD_TOP.size) { rowY, index ->
             val hud = HUD_TOP[index]
             hudRow(draw, rowY, hud, settings.enabled(hud), index == HUD_TOP.lastIndex)
@@ -1725,14 +3531,26 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             val hud = HUD_BOTTOM[index]
             hudRow(draw, rowY, hud, settings.enabled(hud), false)
         }
-        y = section(draw, y + 6, "Dungeon timers · F1-F7", "The active floor's phase splits appear together in one movable HUD.")
+        return y
+    }
+
+    private fun drawClocksDungeon(draw: MenuDraw, startY: Int): Int {
+        val settings = TickTimers.settings
+        val helpY = pageHelp(draw, startY, "Phase splits for F1-F7 in one HUD for the active floor.")
+        var y = section(draw, helpY, "Dungeon timers · F1-F7", "The active floor's phase splits appear together in one movable HUD.")
         y = grouped(draw, y, DUNGEON_TIMER_LABELS.size) { rowY, index ->
             infoRow(draw, rowY, DUNGEON_TIMER_LABELS[index], "Available as an Alert clock and in the F1-F7 HUD.", index == DUNGEON_TIMER_LABELS.lastIndex)
         }
         y = grouped(draw, y, 1) { rowY, _ ->
             hudRow(draw, rowY, TimerHud.DUNGEON, settings.enabled(TimerHud.DUNGEON), last = true)
         }
-        y = section(draw, y + 6, "Debug", "Same clocks as Hypixel, ticking without ping.")
+        return y
+    }
+
+    private fun drawClocksDebug(draw: MenuDraw, startY: Int): Int {
+        val settings = TickTimers.settings
+        val helpY = pageHelp(draw, startY, "Test clocks that tick without a server ping.")
+        val y = section(draw, helpY, "Debug", "Same clocks as Hypixel, ticking without ping.")
         return grouped(draw, y, 1) { rowY, _ ->
             toggleRow(
                 draw, rowY, "Debug mode",
@@ -1744,10 +3562,11 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun drawNotifications(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Sound and on-screen warnings for critical timings.")
         val settings = TickTimers.settings
         var y = section(
             draw,
-            startY,
+            helpY,
             "Alerts",
             "Time is seconds on the clock. Use -1 so it fires one second after that clock touches 0.",
         )
@@ -1791,8 +3610,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun drawWaypoints(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Walk-on trigger areas that send a command when you step in.")
         val settings = TickTimers.settings
-        var y = section(draw, startY, "Waypoints", "Boxes in the world. Walk onto one to send its command.")
+        var y = section(draw, helpY, "Waypoints", "Boxes in the world. Walk onto one to send its command.")
         y = grouped(draw, y, 2) { rowY, index ->
             if (index == 0) {
                 toggleRow(
@@ -1828,16 +3648,21 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun drawMorph(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Replace your player model on this client only.")
         var y = section(
             draw,
-            startY,
+            helpY,
             "Player morph",
             "Local model swap. Camera height is optional and needs the updated loader.",
         )
         val morphId = PlayerDisguise.entityId()
+        val morphStatus = when {
+            !PlayerDisguise.enabled() -> "Disabled" + (morphId?.let { " (saved: $it)" }.orEmpty())
+            else -> morphId ?: "Off"
+        }
         y = grouped(draw, y, 3) { rowY, index ->
             when (index) {
-                0 -> infoRow(draw, rowY, "Current morph", morphId ?: "Off", last = false)
+                0 -> infoRow(draw, rowY, "Current morph", morphStatus, last = false)
                 1 -> toggleRow(
                     draw,
                     rowY,
@@ -1861,10 +3686,11 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return note(draw, y, "Use /icantpy morph camera mode crosshair|look to switch alignment. /icantpy morph camera on|off controls eye height.")
     }
 
-    private fun drawItems(draw: MenuDraw, startY: Int): Int {
+    private fun drawItemSharing(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Share your worn cosmetics with other icantpy users.")
         var y = section(
             draw,
-            startY,
+            helpY,
             "Shared cosmetics",
             "Other icantpy users can see your worn dyes, names, and models when sharing is on. Morphs publish even with sharing off.",
         )
@@ -1880,9 +3706,15 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 CustomRename.setShareWithOthers(!CustomRename.shareWithOthers())
             }
         }
+        return y
+    }
+
+    private fun drawItemCustomize(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Rename or restyle the item in your main hand. Only this client sees it.")
+        var y = helpY
         y = section(
             draw,
-            y,
+            y + SECTION_GAP,
             "Item rename",
             "Client-only, matched by Hypixel UUID, SkyBlock id, or name. Hold the item in your main hand.",
         )
@@ -2131,14 +3963,250 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return y + cardH + 10
     }
 
+    /** Opens [target] at its remembered subtab and scroll. HUD Layout opens the HUD editor instead. */
+    private fun openPage(target: ConfigPage) {
+        if (target.opensHudEditor) {
+            IcantpyGui.openHudEditor(TimerHud.DUNGEON)
+            return
+        }
+        if (target == page) {
+            resetTransientInput()
+            return
+        }
+        ConfigUiSession.select(target)
+        page = target
+        subtab = ConfigUiSession.subtabOf(target)
+        scroll = ConfigUiSession.scrollOf(target, subtab)
+        resetTransientInput()
+    }
+
+    private fun openFromSearch(target: ConfigPage) {
+        fields[SEARCH_FIELD_ID] = ""
+        openPage(target)
+    }
+
+    private fun selectSubtab(index: Int) {
+        ConfigUiSession.selectSubtab(index)
+        subtab = ConfigUiSession.subtabOf(page)
+        scroll = ConfigUiSession.scrollOf(page, subtab)
+        resetTransientInput()
+    }
+
+    private fun resetTransientInput() {
+        focused = null
+        openDebugDropdown = null
+        leapDropdownSpec = null
+    }
+
+    private fun headerToggle(): HeaderToggle? {
+        val module = page.primaryModuleId?.let(AetherModules::byId) ?: return null
+        if (!AetherModules.hasMasterSwitch(module.id)) return null
+        return HeaderToggle(moduleEnabled(module)) { toggleAetherModule(module) }
+    }
+
+    private fun drawOverview(draw: MenuDraw, startY: Int): Int {
+        val columns = if (innerWidth() >= OVERVIEW_WIDE_MIN_WIDTH) 3 else 2
+        val cardW = (innerWidth() - OVERVIEW_CARD_GAP * (columns - 1)) / columns
+        var y = startY
+        ConfigSection.entries.filter { it != ConfigSection.HOME }.forEach { group ->
+            val pages = ConfigNav.overviewPages().filter { it.section == group }
+            if (pages.isEmpty()) return@forEach
+            draw.heading(group.label, innerLeft(), y)
+            y += draw.lineHeight(draw.headingFont) + 10
+            pages.chunked(columns).forEach { row ->
+                row.forEachIndexed { index, target ->
+                    overviewCard(draw, innerLeft() + index * (cardW + OVERVIEW_CARD_GAP), y, cardW, target)
+                }
+                y += OVERVIEW_CARD_HEIGHT + OVERVIEW_CARD_GAP
+            }
+            y += 6
+        }
+        return y
+    }
+
+    private fun overviewCard(draw: MenuDraw, x: Int, y: Int, w: Int, target: ConfigPage) {
+        val h = OVERVIEW_CARD_HEIGHT
+        val corner = draw.chrome.cardRadius
+        draw.round(x, y, w, h, corner, draw.palette.group)
+        if (draw.hovered(x, y, w, h)) draw.round(x, y, w, h, corner, draw.palette.rowHover)
+        draw.outline(x, y, w, h, corner, draw.palette.line)
+        // Registered before the toggle so the toggle wins clicks on its own area.
+        draw.clickable(x, y, w, h) { openPage(target) }
+        val module = target.primaryModuleId?.let(AetherModules::byId)
+        val hasToggle = module != null && AetherModules.hasMasterSwitch(module.id)
+        val titleW = w - 28 - if (hasToggle) OVERVIEW_TOGGLE_RESERVE else 0
+        draw.text(draw.fit(target.title, titleW, draw.bodyFont), x + 14, y + 10, draw.palette.text, draw.bodyFont)
+        draw.text(draw.fit(target.caption, w - 28, draw.descFont), x + 14, y + 32, draw.palette.tertiary, draw.descFont)
+        if (module != null && hasToggle) {
+            draw.toggle(x + w - TOGGLE_WIDTH - 12, y + 10, moduleEnabled(module)) { toggleAetherModule(module) }
+        }
+    }
+
+    private fun drawInventorySort(draw: MenuDraw, startY: Int): Int {
+        val helpY = pageHelp(draw, startY, "Sort your inventory into saved layouts with a keybind or command.")
+        val blurb = AetherModules.byId(AetherModuleId.INVENTORY_SORT)?.hint.orEmpty()
+        var y = section(draw, helpY, "Inventory sort", blurb)
+        y = grouped(draw, y, 7) { rowY, index ->
+            val sort = InvSortController.settings
+            when (index) {
+                0 -> toggleRow(draw, rowY, "Enabled", "Show the sort button and allow hotkey sorting.", sort.enabled, false) {
+                    InvSortController.setEnabled(!InvSortController.settings.enabled)
+                }
+                1 -> toggleRow(draw, rowY, "Move cursor like a human", "Glide the mouse to each slot before clicking it.", sort.moveCursor, false) {
+                    InvSortController.setMoveCursor(!InvSortController.settings.moveCursor)
+                }
+                2 -> toggleRow(draw, rowY, "Close inventory after manual sort", "Close the inventory after a sort started from a preset button finishes.", sort.closeWhenDone, false) {
+                    InvSortController.setCloseWhenDone(!InvSortController.settings.closeWhenDone)
+                }
+                3 -> toggleRow(draw, rowY, "Instant sort", "Same moves, no delays — still waits for the server to confirm each click.", sort.instant, false) {
+                    InvSortController.setInstant(!InvSortController.settings.instant)
+                }
+                4 -> actionRow(
+                    draw,
+                    rowY,
+                    "Lag safety: ${safetyLabel(sort.safetyLevel)}",
+                    "Strict waits longer for the server; use on laggy servers.",
+                    last = false,
+                ) { cy ->
+                    val label = safetyLabel(sort.safetyLevel)
+                    draw.button(label, rightX(draw.measure(label, draw.buttonFont) + 28), cy, ButtonStyle.PRIMARY) {
+                        InvSortController.cycleSafetyLevel()
+                    }
+                }
+                5 -> toggleRow(
+                    draw,
+                    rowY,
+                    "Hotbar swap: one swap per press",
+                    "Each press fixes one hotbar slot (1 input → 1 click).",
+                    sort.swapOnePerPress,
+                    false,
+                ) {
+                    InvSortController.setSwapOnePerPress(!InvSortController.settings.swapOnePerPress)
+                }
+                else -> toggleRow(
+                    draw,
+                    rowY,
+                    "Lock input while auto actions run",
+                    "Clicks and keys are ignored; press Esc twice quickly (within 600 ms) to cancel.",
+                    sort.lockInput,
+                    true,
+                ) {
+                    InvSortController.setLockInput(!InvSortController.settings.lockInput)
+                }
+            }
+        }
+        y = section(draw, y + SECTION_GAP, "Presets", "Presets are saved layouts. Each can have its own hotkey.")
+        return grouped(draw, y, 1) { rowY, _ ->
+            val label = "Open preset editor"
+            actionRow(draw, rowY, "Preset editor", "Save, overwrite, rename, bind hotkeys, and clear inventory sort presets.", last = true) { cy ->
+                draw.button(label, rightX(draw.measure(label, draw.buttonFont) + 28), cy, ButtonStyle.PRIMARY) {
+                    McUi.setScreen(Minecraft.getInstance(), InvSortEditorScreen(this))
+                }
+            }
+        }
+    }
+
+    private fun safetyLabel(level: CursorGuard.SafetyLevel): String = when (level) {
+        CursorGuard.SafetyLevel.FAST -> "Fast"
+        CursorGuard.SafetyLevel.BALANCED -> "Balanced"
+        CursorGuard.SafetyLevel.STRICT -> "Strict"
+    }
+
+    private fun moduleEnabled(module: AetherModule): Boolean {
+        aetherOverrides[module.id]?.let { return it }
+        val settings = TickTimers.settings
+        return when (module.id) {
+            AetherModuleId.CLOCKS -> settings.dungeonHud
+            AetherModuleId.MECHANICS -> listOf(TimerHud.PAD, TimerHud.LIGHTNING, TimerHud.PY, TimerHud.STORM_TICK, TimerHud.GOLDOR, TimerHud.NECRON).any(settings::enabled)
+            AetherModuleId.ALERTS -> settings.padHud || settings.goldorHud
+            AetherModuleId.LEAP -> settings.leap.enabled
+            AetherModuleId.FREELOOK -> Freelook.enabled()
+            AetherModuleId.BOXES -> settings.waypointsEnabled
+            AetherModuleId.STATS -> settings.statsArmor.enabled
+            AetherModuleId.COMBAT -> settings.dropUltimate.enabled
+            AetherModuleId.CARRY -> settings.slayer.enabled
+            AetherModuleId.FIRE_PITS -> FirePit.config().enabled
+            AetherModuleId.BOSS_AIM -> BossAim.config().enabled
+            AetherModuleId.CLICK_GUI -> true
+            AetherModuleId.INVENTORY_SORT -> InvSortController.settings.enabled
+            AetherModuleId.RENAME -> CustomRename.enabled()
+            AetherModuleId.MORPH -> PlayerDisguise.enabled()
+            AetherModuleId.SHARDS -> ShardChecklistController.enabled()
+            AetherModuleId.SPLITS -> RunSplitsController.settings.enabled
+            AetherModuleId.SCORE -> ScoreTracker.settings.enabled
+            AetherModuleId.DRAGONS -> DragonController.settings().enabled
+            else -> module.defaultEnabled
+        }
+    }
+
+    private fun toggleAetherModule(module: AetherModule) {
+        val settings = TickTimers.settings
+        when (module.id) {
+            AetherModuleId.CLOCKS -> TickTimers.toggle("dungeonHud")
+            AetherModuleId.MECHANICS -> {
+                val huds = listOf(TimerHud.PAD, TimerHud.LIGHTNING, TimerHud.PY, TimerHud.STORM_TICK, TimerHud.GOLDOR, TimerHud.NECRON)
+                val next = !huds.any(settings::enabled)
+                huds.forEach { hud -> if (settings.enabled(hud) != next) TickTimers.toggle(hud.toggleKey()) }
+            }
+            AetherModuleId.ALERTS -> {
+                val next = !(settings.padHud || settings.goldorHud)
+                if (settings.padHud != next) TickTimers.toggle("padHud")
+                if (settings.goldorHud != next) TickTimers.toggle("goldorHud")
+            }
+            AetherModuleId.LEAP -> TickTimers.updateLeap { it.copy(enabled = !it.enabled) }
+            AetherModuleId.FREELOOK -> Freelook.setEnabled(!Freelook.enabled())
+            AetherModuleId.BOXES -> TickTimers.toggle("waypointsEnabled")
+            AetherModuleId.STATS -> TickTimers.updateStatsArmor { it.copy(enabled = !it.enabled) }
+            AetherModuleId.COMBAT -> TickTimers.updateDropUltimate { it.copy(enabled = !it.enabled) }
+            AetherModuleId.CARRY -> TickTimers.updateSlayer { it.copy(enabled = !it.enabled) }
+            AetherModuleId.FIRE_PITS -> FirePit.edit { it.copy(enabled = !it.enabled) }
+            AetherModuleId.BOSS_AIM -> BossAim.edit { it.copy(enabled = !it.enabled) }
+            AetherModuleId.INVENTORY_SORT -> InvSortController.setEnabled(!InvSortController.settings.enabled)
+            AetherModuleId.RENAME -> CustomRename.setEnabled(!CustomRename.enabled())
+            AetherModuleId.MORPH -> PlayerDisguise.setEnabled(!PlayerDisguise.enabled())
+            AetherModuleId.SHARDS -> ShardChecklistController.setEnabled(!ShardChecklistController.enabled())
+            AetherModuleId.SPLITS -> RunSplitsController.updateSettings { it.copy(enabled = !it.enabled) }
+            AetherModuleId.SCORE -> ScoreTracker.updateSettings { it.copy(enabled = !it.enabled) }
+            AetherModuleId.DRAGONS -> DragonController.updateSettings { it.copy(enabled = !it.enabled) }
+            AetherModuleId.CLICK_GUI, AetherModuleId.HUD_EDIT -> {
+                aetherOverrides[module.id] = !(aetherOverrides[module.id] ?: module.defaultEnabled)
+            }
+            else -> aetherOverrides[module.id] = !(aetherOverrides[module.id] ?: module.defaultEnabled)
+        }
+    }
+
+    private fun descriptionVisible(key: String, hovered: Boolean): Boolean {
+        if (!hovered) {
+            if (descriptionHoverKey == key) descriptionHoverKey = null
+            return false
+        }
+        val now = System.currentTimeMillis()
+        if (descriptionHoverKey != key) {
+            descriptionHoverKey = key
+            descriptionHoverSince = now
+            return false
+        }
+        return now - descriptionHoverSince >= 500L
+    }
+
+    /** Muted one-sentence intro at the top of a subtab. Returns the y where its content starts. */
+    private fun pageHelp(draw: MenuDraw, y: Int, text: String): Int {
+        var ty = y
+        draw.wrap(text, innerWidth() - 24).forEach { line ->
+            draw.text(line, innerLeft(), ty, draw.palette.secondary, draw.descFont)
+            ty += draw.lineHeight(draw.descFont)
+        }
+        return ty + SECTION_GAP
+    }
+
     private fun section(draw: MenuDraw, y: Int, title: String, blurb: String): Int {
         draw.heading(title, innerLeft(), y)
-        var next = y + draw.lineHeight(draw.headingFont) + 4
-        draw.wrap(blurb, innerWidth()).forEach { line ->
-            draw.text(line, innerLeft(), next, draw.palette.tertiary, draw.descFont)
-            next += draw.lineHeight(draw.descFont) + 1
+        val headingH = draw.lineHeight(draw.headingFont)
+        val hovered = draw.hovered(innerLeft(), y, innerWidth(), headingH + 4)
+        if (descriptionVisible("section:$title", hovered)) {
+            draw.requestTooltip(blurb, innerWidth() - 28)
         }
-        return next + 8
+        return y + headingH + 10
     }
 
     private fun note(draw: MenuDraw, y: Int, text: String): Int {
@@ -2154,13 +4222,11 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun grouped(draw: MenuDraw, y: Int, rows: Int, row: (Int, Int) -> Int): Int {
-        val h = 6 + rows * metrics.row
-        card(draw, innerLeft(), y, innerWidth(), h)
-        var next = y + 4
+        var next = y
         repeat(rows) { index ->
             next = row(next, index)
         }
-        return y + h + 10
+        return y + rows * metrics.row + 8
     }
 
     private fun card(draw: MenuDraw, x: Int, y: Int, w: Int, h: Int) {
@@ -2191,7 +4257,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     ): Int {
         draw.clickable(innerLeft(), y, innerWidth(), metrics.row, action)
         return actionRow(draw, y, title, subtitle, last) { cy ->
-            draw.toggle(rightX(40), cy + 1, on, action)
+            draw.toggle(rightX(40), cy + 5, on, action)
         }
     }
 
@@ -2206,19 +4272,18 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         val left = innerLeft()
         val width = innerWidth()
         val row = metrics.row
+        val cardHeight = row - 4
+        val corner = draw.chrome.cardRadius
+        draw.round(left, y, width, cardHeight, corner, draw.palette.group)
+        draw.outline(left, y, width, cardHeight, corner, draw.palette.line)
         if (draw.hovered(left, y, width, row)) {
-            draw.round(left + 4, y, width - 8, row - 2, draw.chrome.cardRadius, draw.palette.rowHover)
+            draw.round(left, y, width, cardHeight, corner, draw.palette.rowHover)
+            draw.outline(left, y, width, cardHeight, corner, 0x28C9BBFF)
         }
-        draw.text(title, left + 14, y + 6, draw.palette.text, draw.bodyFont)
-        draw.text(
-            draw.fit(subtitle, width - 150, draw.descFont),
-            left + 14,
-            y + 22,
-            draw.palette.tertiary,
-            draw.descFont,
-        )
-        controls(y + 8)
-        if (!last) draw.line(left + 14, y + row - 1, width - 28)
+        val hovered = draw.hovered(left, y, width, row)
+        draw.text(title, left + 18, y + 8, draw.palette.text, draw.bodyFont)
+        if (descriptionVisible("legacy:$title", hovered)) draw.requestTooltip(subtitle, width - 28)
+        controls(y + ((cardHeight - 28) / 2).coerceAtLeast(2))
         return y + row
     }
 
@@ -2237,11 +4302,12 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
 
     private fun applyField(id: String, value: String) {
         when {
+            id == SEARCH_FIELD_ID -> scroll = 0
             id == "shards:search" -> {
                 shardPage.search = value.take(200)
                 fields[id] = shardPage.search
                 scroll = 0
-                ConfigUiSession.save(tab, 0)
+                ConfigUiSession.save(page, subtab, 0)
             }
             id.startsWith("carry:target:") -> value.trim().toIntOrNull()?.let { number ->
                 val name = id.removePrefix("carry:target:")
@@ -2284,13 +4350,34 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             }
             id.startsWith("lt:") -> {
                 val parts = id.split(':')
+                if (parts.size == 5 && parts[2] == "mark" && parts[4] == "player") {
+                    // lt:<card>:mark:<step>:player, the player a mark step names.
+                    val index = parts[3].toIntOrNull() ?: return
+                    val trigger = TickTimers.settings.leap.triggers.firstOrNull { it.id == parts[1] } ?: return
+                    TickTimers.updateLeap {
+                        it.upsertTrigger(trigger.withStepChanged(index) { step -> step.copy(markPlayer = value.trim()) })
+                    }
+                    return
+                }
+                if (parts.size == 5 && parts[2] == "follow") {
+                    // lt:<card>:follow:<step>:name, the player of a follow-up step.
+                    val index = parts[3].toIntOrNull() ?: return
+                    val trigger = TickTimers.settings.leap.triggers.firstOrNull { it.id == parts[1] } ?: return
+                    TickTimers.updateLeap {
+                        it.upsertTrigger(trigger.withStepChanged(index) { step -> step.copy(followTargetValue = value.trim()) })
+                    }
+                    return
+                }
                 if (parts.size != 3) return
                 val trigger = TickTimers.settings.leap.triggers.firstOrNull { it.id == parts[1] } ?: return
                 when (parts[2]) {
                     "name" -> TickTimers.updateLeap { it.upsertTrigger(trigger.copy(targetValue = value)) }
                     "zone" -> TickTimers.updateLeap { it.upsertTrigger(trigger.copy(zone = value)) }
                     "reason" -> TickTimers.updateLeap { it.upsertTrigger(trigger.copy(reason = value)) }
+                    "match" -> TickTimers.updateLeap { it.upsertTrigger(trigger.copy(match = value.trim().ifBlank { "any" })) }
                     "player" -> TickTimers.updateLeap { it.upsertTrigger(trigger.copy(targetPlayer = value)) }
+                    "chatPlayer" -> TickTimers.updateLeap { it.upsertTrigger(trigger.copy(chatPlayer = value.trim())) }
+                    "chatText" -> TickTimers.updateLeap { it.upsertTrigger(trigger.copy(chatText = value)) }
                     "secs" -> TimerTrigger.parseSeconds(value)?.let { seconds ->
                         val current = trigger.clock ?: ClockSpec.stormElapsed(seconds)
                         TickTimers.updateLeap {
@@ -2299,10 +4386,6 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                     }
                     "delay" -> value.toIntOrNull()?.coerceAtLeast(0)?.let { seconds ->
                         TickTimers.updateLeap { it.upsertTrigger(trigger.copy(chainDelaySeconds = seconds)) }
-                    }
-                    "hold" -> {
-                        val seconds = value.trim().toIntOrNull()?.coerceAtLeast(0) ?: 0
-                        TickTimers.updateLeap { it.upsertTrigger(trigger.copy(chainDurationSeconds = seconds)) }
                     }
                 }
             }
@@ -2349,12 +4432,17 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
     }
 
+    private fun openRunHudEditor(target: RunHudEditorScreen.Target) {
+        McUi.setScreen(Minecraft.getInstance(), RunHudEditorScreen(target))
+    }
+
     private fun toast(message: String) {
         toast = message
         toastUntil = System.currentTimeMillis() + 1600
     }
 
     companion object {
+        private const val SLIDER_WIDTH = 150
         private val HUD_TOP = listOf(TimerHud.NECRON, TimerHud.GOLDOR)
         private val HUD_BOTTOM = listOf(
             TimerHud.PAD,

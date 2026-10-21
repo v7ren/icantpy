@@ -10,10 +10,10 @@ internal object MorphCrosshair {
     fun query(width: Int, height: Int, partialTick: Float): IcantpyQueryResult {
         PlayerDisguise.onCrosshairHook()
         // PASS leaves vanilla's crosshair and attack indicator centered, without any HUD transform.
-        if (!PlayerDisguise.cameraMode().movesCrosshair(PlayerDisguise.followEyeHeight())) return pass()
+        if (!PlayerDisguise.cameraMode().movesCrosshair(PlayerDisguise.cameraFollowsMorph())) return pass()
         val mc = Minecraft.getInstance()
         val player = mc.player ?: return pass()
-        if (PlayerDisguise.entityId() == null
+        if (PlayerDisguise.activeEntityId() == null
             || !mc.options.getCameraType().isFirstPerson()) return pass()
         val camera = McCompat.mainCamera(mc)
         if (!camera.isInitialized() || camera.isDetached() || camera.entity() !== player) return pass()

@@ -1,5 +1,5 @@
 {
-	"required": true,
+	"required": false,
 	"package": "net.icantpy.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [],
@@ -27,10 +27,36 @@
 		"MixinLeapContainerScreen",
 		"MixinLeapMenuScreens",
 		"MixinLeapScreen",
-		"MixinOdinLeapTeammates"
+		"MixinOdinLeapTeammates",
+		"EntityGlowMixin",
+		"EntityGlowTeamColorMixin",
+		"ParticleAccessor",
+		"CullEntityMixin",
+		"CullBlockEntityMixin",
+		"CullParticleMixin",
+		"CullNameTagMixin",
+		"CullLivingNameTagMixin",
+		"CullArmorStandNameTagMixin",
+		"CullItemFrameNameTagMixin",
+		"ProxyConnectionMixin",
+		"ProxyLegacyPingMixin",
+		"VisualScreenEffectMixin",
+		"VisualHurtCameraMixin",
+		"VisualVignetteMixin",
+		"VisualParticleMixin",
+		"VisualLightningMixin",
+		"VisualFogMixin",
+		"VisualLightmapMixin",
+		"VisualClockMixin",
+		"VisualCameraMixin",
+		"VisualItemInHandMixin",
+		"VisualSwingDurationMixin",
+		"VisualPlayerModelMixin",
+		"VisualHandShaderMixin",
+		"MovementGuardMixin"
 	],
 	"injectors": {
-		"defaultRequire": 1
+		"defaultRequire": 0
 	},
 	"overwrites": {
 		"requireAnnotations": true

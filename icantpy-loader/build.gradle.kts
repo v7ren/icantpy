@@ -19,6 +19,7 @@ repositories {
 sourceSets {
     named("main") {
         java.srcDir(file("${projectDir.parent}/icantpy-shared/src/main/java"))
+        java.srcDir(file("${projectDir.parent}/proxy-shared/src/main/java"))
         resources.srcDir(file("${projectDir.parent}/icantpy-shared/src/main/resources"))
     }
 }

@@ -16,7 +16,9 @@ data class PendingLeap(
     val sourceKind: LeapSourceKind = LeapSourceKind.CUSTOM,
     val sourceTriggerId: String = "",
     val section: Int = 0,
-) {
+    override val holdMode: LeapHoldMode = LeapHoldMode.TIMED,
+    override val holdLocked: Boolean = false,
+) : LeapHoldable<PendingLeap> {
     fun matchesClass(want: LeapDungeonClass): Boolean {
         if (!want.isReal()) return false
         if (targetClass == want || clazz == want) return true
@@ -31,14 +33,22 @@ data class PendingLeap(
     }
 
     fun centerReason(): String = reason.ifBlank { sourceKind.label() }
+
+    override val holdTitle: String get() = centerTitle()
+    override val holdKey: String get() = LeapOrientTargets.keyOf(targetName, targetClass, sender)
+    override val holdPriority: Int get() = priority
+    override val holdArmedAtMs: Long get() = atMs
+    override val holdExpiresAtMs: Long get() = expiresAtMs
+    override fun withExpiry(expiresAtMs: Long): PendingLeap = copy(expiresAtMs = expiresAtMs)
 }
 
 object LeapOrientTargets {
-    private val pending = ArrayList<PendingLeap>()
+    private val hold = LeapTargetHold<PendingLeap> { old, next -> old.isBossOrClock() && next.isBossOrClock() }
 
+    /** Every live target, overrides first, then the fallback. */
     fun all(nowMs: Long = System.currentTimeMillis()): List<PendingLeap> {
         prune(nowMs)
-        return pending.toList()
+        return hold.all()
     }
 
     fun arm(
@@ -57,13 +67,15 @@ object LeapOrientTargets {
         sourceKind: LeapSourceKind = LeapSourceKind.CUSTOM,
         sourceTriggerId: String = "",
         section: Int = 0,
+        holdMode: LeapHoldMode = LeapHoldMode.TIMED,
+        locked: Boolean = false,
     ): PendingLeap? {
         prune(nowMs)
         val next = PendingLeap(
             sender = sender,
             location = location,
             clazz = clazz,
-            expiresAtMs = nowMs + durationMs,
+            expiresAtMs = nowMs + if (holdMode == LeapHoldMode.TIMED) durationMs else LEAP_HOLD_NEVER_MS,
             atMs = nowMs,
             targetName = targetName,
             targetClass = targetClass,
@@ -75,49 +87,38 @@ object LeapOrientTargets {
             sourceKind = sourceKind,
             sourceTriggerId = sourceTriggerId,
             section = section,
+            holdMode = holdMode,
+            holdLocked = locked,
         )
-        val current = pending.maxWithOrNull(compareBy<PendingLeap> { it.priority }.thenBy { it.atMs })
-        if (current != null && !shouldReplace(current, next)) return null
-        pending.removeAll {
-            it.priority < next.priority ||
-                (it.priority == next.priority && next.sourceKind in setOf(LeapSourceKind.BOSS, LeapSourceKind.CLOCK) &&
-                    it.sourceKind in setOf(LeapSourceKind.BOSS, LeapSourceKind.CLOCK))
-        }
-        val key = armKey(targetName, targetClass, sender)
-        pending.removeAll { armKey(it.targetName, it.targetClass, it.sender).equals(key, ignoreCase = true) }
-        pending += next
-        return next
+        return if (hold.arm(next)) next else null
     }
 
-    fun shouldReplace(current: PendingLeap, next: PendingLeap): Boolean {
-        if (next.priority < current.priority) return false
-        return true
-    }
+    /** Drains the hold events (armed, blocked by lock, fallback restored, ...) for the debug log. */
+    fun drainEvents(): List<LeapHoldEvent> = hold.drainEvents()
+
+    /** The base target shown whenever no override is active. */
+    fun fallback(): PendingLeap? = hold.fallback()
 
     fun clear() {
-        pending.clear()
+        hold.reset()
     }
 
     fun removeSources(ids: Set<String>) {
-        pending.removeAll { it.sourceTriggerId in ids }
+        hold.dropWhere { it.sourceTriggerId in ids }
     }
 
     fun refreshSource(id: String, durationMs: Long, nowMs: Long = System.currentTimeMillis()) {
-        pending.indices.forEach { index ->
-            if (pending[index].sourceTriggerId == id) {
-                pending[index] = pending[index].copy(expiresAtMs = nowMs + durationMs)
-            }
-        }
+        hold.extend({ it.sourceTriggerId == id }, nowMs + durationMs)
     }
 
     fun prune(nowMs: Long = System.currentTimeMillis()) {
-        pending.removeAll { it.expiresAtMs <= nowMs }
+        hold.tick(nowMs)
     }
 
     fun dropIfPhaseChanged(phase: LeapPhase, nowMs: Long = System.currentTimeMillis()) {
         prune(nowMs)
         if (phase == LeapPhase.UNKNOWN || phase == LeapPhase.ANY) return
-        pending.removeAll { lock ->
+        hold.dropWhere { lock ->
             lock.phase != LeapPhase.UNKNOWN && lock.phase != LeapPhase.ANY && lock.phase != phase
         }
     }
@@ -125,7 +126,7 @@ object LeapOrientTargets {
     fun dropIfSectionChanged(section: Int, nowMs: Long = System.currentTimeMillis()) {
         prune(nowMs)
         if (section !in 1..4) return
-        pending.removeAll { lock ->
+        hold.dropWhere { lock ->
             lock.section in 1..4 && lock.section != section
         }
     }
@@ -133,44 +134,52 @@ object LeapOrientTargets {
     fun dropIfTargetMissing(aliveNames: Set<String>, nowMs: Long = System.currentTimeMillis()) {
         prune(nowMs)
         if (aliveNames.isEmpty()) return
-        pending.removeAll { lock ->
+        hold.dropWhere { lock ->
             val name = lock.targetName
             name.isNotBlank() && aliveNames.none { it.equals(name, ignoreCase = true) }
         }
     }
 
+    /**
+     * The target the leap menu shows. Preferred overrides win; otherwise the strongest override;
+     * with no override at all, the fallback.
+     */
     fun pick(
         gameStateId: String,
         settings: LeapOrientSettings,
         nowMs: Long = System.currentTimeMillis(),
     ): PendingLeap? {
         prune(nowMs)
-        if (pending.isEmpty()) return null
+        val live = hold.overrides()
+        if (live.isEmpty()) return hold.fallback()
         val preferred = settings.preferred(gameStateId)
-        preferredMatch(preferred)?.let { return it }
-        return pending.maxWithOrNull(compareBy<PendingLeap> { it.priority }.thenBy { it.atMs })
+        preferredMatch(live, preferred)?.let { return it }
+        return live.maxWithOrNull(compareBy<PendingLeap> { it.priority }.thenBy { it.atMs })
     }
 
     fun remainingMs(target: PendingLeap, nowMs: Long = System.currentTimeMillis()): Long =
         (target.expiresAtMs - nowMs).coerceAtLeast(0)
 
-    private fun preferredMatch(preferred: LeapPriorityRule?): PendingLeap? {
+    private fun preferredMatch(live: List<PendingLeap>, preferred: LeapPriorityRule?): PendingLeap? {
         if (preferred == null) return null
         val matches = when (preferred.kind) {
             LeapPreferKind.LOCATION -> {
                 val spot = OrientSpot.fromToken(preferred.value) ?: return null
                 if (spot == OrientSpot.ANY) return null
-                pending.filter { OrientSpot.matches(it.location, spot) }
+                live.filter { OrientSpot.matches(it.location, spot) }
             }
             LeapPreferKind.CLASS -> {
                 val want = LeapDungeonClass.fromToken(preferred.value)?.takeIf { it.isReal() } ?: return null
-                pending.filter { it.matchesClass(want) }
+                live.filter { it.matchesClass(want) }
             }
         }
         return matches.maxWithOrNull(compareBy<PendingLeap> { it.priority }.thenBy { it.atMs })
     }
 
-    private fun armKey(targetName: String, targetClass: LeapDungeonClass?, sender: String): String {
+    private fun PendingLeap.isBossOrClock(): Boolean =
+        sourceKind == LeapSourceKind.BOSS || sourceKind == LeapSourceKind.CLOCK
+
+    internal fun keyOf(targetName: String, targetClass: LeapDungeonClass?, sender: String): String {
         val clazz = targetClass?.takeIf { it.isReal() }
         if (clazz != null && targetName.isBlank()) return "class:${clazz.name}"
         if (targetName.isNotBlank()) return "name:$targetName"

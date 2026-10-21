@@ -6,6 +6,8 @@ data class CustomRenameConfig(
     val items: Map<String, CustomRenameItemData> = emptyMap(),
     val nameChromaSpeed: Int = DEFAULT_NAME_CHROMA_SPEED,
     val shareWithOthers: Boolean = false,
+    /** Master switch: when false, local items render vanilla. Other players' shared cosmetics are unaffected. */
+    val enabled: Boolean = true,
 ) {
     fun withName(identity: ItemIdentity, name: String): CustomRenameConfig {
         val key = identity.storageKey()

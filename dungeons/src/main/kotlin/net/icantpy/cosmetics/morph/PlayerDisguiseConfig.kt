@@ -21,12 +21,15 @@ data class PlayerDisguiseConfig(
     val entityId: String? = null,
     val followEyeHeight: Boolean = false,
     val cameraMode: MorphCameraMode = MorphCameraMode.LOOK_AT,
+    /** Master switch: when false the saved morph is kept but not applied or published. */
+    val enabled: Boolean = true,
 ) {
     internal fun serialized(): Map<String, Any?> = mapOf(
         "version" to 1,
         "entity" to entityId,
         "followEyeHeight" to followEyeHeight,
         "cameraMode" to cameraMode.id,
+        "enabled" to enabled,
     )
 
     companion object {
@@ -58,7 +61,11 @@ data class PlayerDisguiseConfig(
                     ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
                     ?.asString,
             ) ?: MorphCameraMode.LOOK_AT
-            return PlayerDisguiseConfig(normalizeEntityId(raw), follow, mode)
+            // Files written before the switch existed keep the morph on.
+            val enabled = obj.get("enabled")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
+                ?.asBoolean ?: true
+            return PlayerDisguiseConfig(normalizeEntityId(raw), follow, mode, enabled)
         }
     }
 }

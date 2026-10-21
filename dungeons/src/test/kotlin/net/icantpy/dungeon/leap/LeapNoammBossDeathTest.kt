@@ -9,10 +9,11 @@ class LeapNoammBossDeathTest {
     fun maxorZeroRequiresMoreThan120BossEntryTicksNotPositiveHealthHistory() {
         val tracker = LeapBossTracker()
         tracker.onChat("[BOSS] Maxor: WELL! WELL! WELL! LOOK WHO'S HERE!")
+        tracker.onBossBars(listOf(LeapBossBar("Maxor", 1f)))
         repeat(120) { tracker.onServerTick() }
         assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))).isEmpty())
         tracker.onServerTick()
-        assertEquals(listOf(LeapTriggerEvent.BOSS_STORM_START),
+        assertEquals(listOf(LeapTriggerEvent.MAXOR_DEATH),
             tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))))
         assertTrue(tracker.onBossBars(listOf(LeapBossBar("Maxor", 0f))).isEmpty())
     }
@@ -21,6 +22,7 @@ class LeapNoammBossDeathTest {
     fun goldorZeroNeedsCoreOpeningButNotEarlierPositiveUpdate() {
         val tracker = LeapBossTracker()
         assertTrue(tracker.onBossBars(listOf(LeapBossBar("Goldor", 0f))).isEmpty())
+        tracker.onBossBars(listOf(LeapBossBar("Goldor", 0.5f)))
         tracker.onChat("The Core entrance is opening!")
         assertEquals(listOf(LeapTriggerEvent.BOSS_GOLDOR_DEATH),
             tracker.onBossBars(listOf(LeapBossBar("Goldor", 0f))))
@@ -31,6 +33,7 @@ class LeapNoammBossDeathTest {
         val tracker = LeapBossTracker()
         tracker.onChat("[BOSS] Necron: I'm afraid, your journey ends now.")
         assertTrue(tracker.onBossBars(listOf(LeapBossBar("Necron", 0f))).isEmpty())
+        tracker.onBossBars(listOf(LeapBossBar("Necron", 0.5f)))
         tracker.onChat("[BOSS] Necron: ARGH!")
         assertEquals(listOf(LeapTriggerEvent.BOSS_NECRON_DEATH),
             tracker.onBossBars(listOf(LeapBossBar("Necron", 0f))))

@@ -1,7 +1,6 @@
 package net.icantpy.gui.config
 
 import org.jetbrains.skia.Data
-import org.jetbrains.skia.FontMgr
 import org.jetbrains.skia.FontStyle
 import org.jetbrains.skia.Typeface
 
@@ -24,14 +23,14 @@ internal object GuiFonts {
             }
         }
         val names = families(id)
-        val regular = match(names, FontStyle.NORMAL) ?: fallback()
-        val semibold = match(names, FontStyle.BOLD) ?: match(names, FontStyle.NORMAL) ?: regular
+        val regular = match(names, SkiaFonts.normal) ?: fallback()
+        val semibold = match(names, SkiaFonts.bold) ?: match(names, SkiaFonts.normal) ?: regular
         return GuiTypefaces(regular, semibold, monoTypeface(regular))
     }
 
     private fun monoTypeface(fallback: Typeface): Typeface =
-        match(families(GuiFontId.CASCADIA), FontStyle.NORMAL)
-            ?: match(families(GuiFontId.CONSOLAS), FontStyle.NORMAL)
+        match(families(GuiFontId.CASCADIA), SkiaFonts.normal)
+            ?: match(families(GuiFontId.CONSOLAS), SkiaFonts.normal)
             ?: fallback
 
     private fun families(id: GuiFontId): List<String> = when (id) {
@@ -48,8 +47,8 @@ internal object GuiFonts {
 
     private fun match(names: List<String>, style: FontStyle): Typeface? {
         names.forEach { name ->
-            FontMgr.default.matchFamilyStyle(name, style)?.let { return it }
-            FontMgr.default.legacyMakeTypeface(name, style)?.let { return it }
+            SkiaFonts.manager.matchFamilyStyle(name, style)?.let { return it }
+            SkiaFonts.manager.legacyMakeTypeface(name, style)?.let { return it }
         }
         return null
     }
@@ -59,12 +58,12 @@ internal object GuiFonts {
             stream.readBytes()
         } ?: return null
         if (bytes.isEmpty()) return null
-        return FontMgr.default.makeFromData(Data.makeFromBytes(bytes))
+        return SkiaFonts.manager.makeFromData(Data.makeFromBytes(bytes))
     }
 
     private fun fallback(): Typeface =
-        FontMgr.default.legacyMakeTypeface("Segoe UI", FontStyle.NORMAL)
-            ?: FontMgr.default.legacyMakeTypeface("Arial", FontStyle.NORMAL)
-            ?: FontMgr.default.legacyMakeTypeface("sans-serif", FontStyle.NORMAL)
+        SkiaFonts.manager.legacyMakeTypeface("Segoe UI", SkiaFonts.normal)
+            ?: SkiaFonts.manager.legacyMakeTypeface("Arial", SkiaFonts.normal)
+            ?: SkiaFonts.manager.legacyMakeTypeface("sans-serif", SkiaFonts.normal)
             ?: error("No typeface available")
 }

@@ -7,7 +7,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-version = "1.0.3.94"
+version = "1.0.3.154"
 group = "net.icantpy"
 
 base {
@@ -68,6 +68,7 @@ tasks.processResources {
 sourceSets {
     named("main") {
         java.srcDir(file("${projectDir.parent}/icantpy-shared/src/main/java"))
+        java.srcDir(file("${projectDir.parent}/proxy-shared/src/main/java"))
         java.srcDir(file("src/mc26_2/java"))
         resources.srcDir(file("${projectDir.parent}/icantpy-shared/src/main/resources"))
     }

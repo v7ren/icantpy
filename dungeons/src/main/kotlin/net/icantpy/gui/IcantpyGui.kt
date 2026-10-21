@@ -139,6 +139,11 @@ object IcantpyGui {
         Minecraft.getInstance().execute { invokeLoaderReload() }
     }
 
+    /** Drops queued open/close requests without touching the currently open screen. */
+    fun clearPending() {
+        queue.clear()
+    }
+
     fun closeIfOpen() {
         queue.clear()
         CustomRenameEditorSession.close()

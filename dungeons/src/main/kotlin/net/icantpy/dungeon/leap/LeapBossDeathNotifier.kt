@@ -33,7 +33,7 @@ object LeapBossDeathNotifier {
     }
 
     private fun bossName(event: LeapTriggerEvent): String? = when (event) {
-        LeapTriggerEvent.BOSS_STORM_START -> "Maxor"
+        LeapTriggerEvent.MAXOR_DEATH -> "Maxor"
         LeapTriggerEvent.BOSS_STORM_END -> "Storm"
         LeapTriggerEvent.BOSS_GOLDOR_DEATH -> "Goldor"
         LeapTriggerEvent.BOSS_NECRON_DEATH -> "Necron"

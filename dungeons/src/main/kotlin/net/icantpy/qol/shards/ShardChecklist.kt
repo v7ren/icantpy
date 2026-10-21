@@ -40,7 +40,8 @@ object ShardChecklistController {
 
     fun tick() {
         scanTicks = (scanTicks + 1) % 5
-        if (scanTicks == 0) scanMenu()
+        // Container scanning only runs while the feature is on; the page still opens when disabled.
+        if (scanTicks == 0 && checklist.enabled) scanMenu()
         if (!openNextTick) return
         openNextTick = false
         // The screen is intentionally opened from tick so outgoing chat cannot replace it.
@@ -69,9 +70,28 @@ object ShardChecklistController {
     fun onDisconnect() { session.clear(); openNextTick = false }
     fun onUnload() { session.clear(); openNextTick = false; IcantpyGui.closeIfOpen() }
     fun checklist(): ShardChecklist = checklist
+
+    fun enabled(): Boolean = checklist.enabled
+
+    /** Persists the Attribute Shards master switch. Disabling stops container scanning and clears observations. */
+    fun setEnabled(enabled: Boolean) {
+        if (checklist.enabled == enabled) return
+        val next = checklist.copy(enabled = enabled)
+        val path = configPath
+        if (path == null) {
+            net.icantpy.Icantpy.LOGGER.warn("Shard checklist path unavailable; enabled flag kept for this session only")
+        } else {
+            try { ShardChecklistStore.save(path, next) }
+            catch (e: Exception) { net.icantpy.Icantpy.LOGGER.warn("Could not save shard enabled flag", e) }
+        }
+        checklist = next
+        if (!enabled) { session.clear(); openNextTick = false }
+    }
+
     fun importText(text: String): ShardImportResult {
         val result = ShardChecklistCodec.decode(text, catalog)
-        val imported = result.checklist ?: return result
+        // Imports replace the list only; the local master switch is kept.
+        val imported = result.checklist?.copy(enabled = checklist.enabled) ?: return result
         try { ShardChecklistStore.save(configPath ?: return ShardImportResult(error = "Checklist path unavailable"), imported) }
         catch (e: Exception) { return ShardImportResult(error = "Could not save checklist: ${e.message}") }
         checklist = imported
@@ -82,6 +102,15 @@ object ShardChecklistController {
     fun progress(name: String): ShardProgress? = session.get(name)
     fun resetProgress() = session.clear()
     fun defaultPreset(): ShardChecklist = ShardCatalog.defaultChecklist()
+    fun setTracked(definition: ShardDefinition, tracked: Boolean): String {
+        val next = ShardQuery.withTracked(checklist, definition, tracked)
+        val path = configPath ?: return "Checklist path unavailable"
+        try { ShardChecklistStore.save(path, next) }
+        catch (e: Exception) { return "Could not save checklist: ${e.message}" }
+        checklist = next
+        return if (tracked) "Tracking ${definition.attributeLabel} (${definition.shardLabel})"
+        else "Stopped tracking ${definition.attributeLabel}"
+    }
     fun buy(definition: ShardDefinition) {
         IcantpyGui.closeIfOpen()
         IcantpyClientActions.sendCommand("bazaar ${definition.displayName} Shard")
