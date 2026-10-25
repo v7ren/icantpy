@@ -69,6 +69,7 @@ internal class MenuDraw(
     val microFont = sized(chrome.typefaces.mono, 8.5f)
     val captionFont = sized(chrome.typefaces.regular, 9f)
     val displayFont = sized(chrome.typefaces.semibold, 15f)
+    val heroFont = sized(chrome.typefaces.semibold, 20f)
     private var ignoreClip = false
     private var tooltipText: String? = null
     private var tooltipMaxWidth = 260
@@ -139,7 +140,7 @@ internal class MenuDraw(
     }
 
     fun heading(label: String, x: Int, y: Int) {
-        text(label.uppercase(), x, y, palette.accent, headingFont)
+        text(label.uppercase(), x, y, if (palette.glass) palette.secondary else palette.accent, headingFont)
     }
 
     fun measure(value: String, font: Font = bodyFont): Int = font.measureText(value).width.toInt()

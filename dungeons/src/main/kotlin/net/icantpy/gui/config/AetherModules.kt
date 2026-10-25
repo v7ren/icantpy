@@ -26,6 +26,8 @@ internal enum class AetherModuleId {
     VISUALS,
     FIRE_PITS,
     BOSS_AIM,
+    BLOOD_HELPER,
+    LIVID_HELPER,
 }
 
 /** Display name, search hint and default enable state for a feature. */
@@ -62,8 +64,10 @@ internal object AetherModules {
         AetherModule(AetherModuleId.CLICK_GUI, "Click GUI", "Custom window theme, blur & responsive scaling", true),
         AetherModule(AetherModuleId.HUD_EDIT, "GUI Layout", "Edit every HUD widget, overlay, and on-screen card", true),
         AetherModule(AetherModuleId.PERFORMANCE, "Performance", "Motion blur and a max-FPS video preset", true),
-        AetherModule(AetherModuleId.FIRE_PITS, "Blaze Fire Pits", "Warns or walks you out of Inferno Demonlord fire pits", false),
-        AetherModule(AetherModuleId.BOSS_AIM, "Boss Aim", "Smoothly turns your camera toward your own slayer boss", false),
+        AetherModule(AetherModuleId.FIRE_PITS, "Blaze", "Avoids fire pits, Quazii and Typhoeus in the Inferno Demonlord fight", false),
+        AetherModule(AetherModuleId.BOSS_AIM, "Aim Assist", "Smoothly turns your camera toward your own slayer boss", false),
+        AetherModule(AetherModuleId.BLOOD_HELPER, "Blood Helper", "Aims at the box where each blood mob is predicted to drop", false),
+        AetherModule(AetherModuleId.LIVID_HELPER, "Livid Helper", "Aims at the real Livid in F5 and M5", false),
         AetherModule(AetherModuleId.VISUALS, "Visuals", "Viewmodel, zoom, perspective, fullbright, fog, time & render cleanup", false),
     )
 

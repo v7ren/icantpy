@@ -35,10 +35,10 @@ class LeapSortOptionRowsTest {
         val rows = LeapTriggerLayout.rows(shape(LeapAutoKind.SORT_INVENTORY, armed = setOf(0)))
             .dropWhile { it.row != LeapCardRow.STEP }
         assertEquals(
-            listOf(LeapCardRow.STEP, LeapCardRow.SORT_ARMED, LeapCardRow.SORT_LOCK, LeapCardRow.SORT_REOPEN, LeapCardRow.SORT_ARM_TIMEOUT, LeapCardRow.ADD_STEP),
+            listOf(LeapCardRow.STEP, LeapCardRow.STEP_BRANCH, LeapCardRow.STEP_REQUIRES, LeapCardRow.SORT_ARMED, LeapCardRow.SORT_LOCK, LeapCardRow.SORT_REOPEN, LeapCardRow.SORT_ARM_TIMEOUT, LeapCardRow.ADD_STEP),
             rows.map { it.row },
         )
-        assertTrue(rows.drop(1).take(4).all { it.indented && it.step == 0 })
+        assertTrue(rows.drop(3).take(4).all { it.indented && it.step == 0 })
     }
 
     @Test

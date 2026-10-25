@@ -64,6 +64,8 @@ data class LeapOrientSettings(
     val boxOrder: List<String> = emptyList(),
     val autoLeapEnabled: Boolean = false,
     val autoLeapBossOnly: Boolean = true,
+    /** Cards fire only during a dungeon boss fight. Off by default so every card keeps working in the clear. */
+    val bossOnlyTriggers: Boolean = false,
     val autoLeapDelayMs: Int = 100,
     val doorOpenerLeapEnabled: Boolean = false,
     val sortMode: LeapSortMode = LeapSortMode.ODIN,
@@ -268,6 +270,7 @@ data class LeapOrientSettings(
                 boxOrder = LeapTriggerJson.stringsFromJson(obj, "boxOrder"),
                 autoLeapEnabled = LeapTriggerJson.bool(obj, "autoLeapEnabled", defaults.autoLeapEnabled),
                 autoLeapBossOnly = LeapTriggerJson.bool(obj, "autoLeapBossOnly", defaults.autoLeapBossOnly),
+                bossOnlyTriggers = LeapTriggerJson.bool(obj, "bossOnlyTriggers", defaults.bossOnlyTriggers),
                 autoLeapDelayMs = LeapTriggerJson.int(obj, "autoLeapDelayMs", defaults.autoLeapDelayMs).coerceIn(0, 2000),
                 doorOpenerLeapEnabled = LeapTriggerJson.bool(obj, "doorOpenerLeapEnabled", defaults.doorOpenerLeapEnabled),
                 sortMode = LeapTriggerJson.enumValue(obj, "sortMode", defaults.sortMode),
@@ -322,6 +325,7 @@ data class LeapOrientSettings(
             obj.add("boxOrder", LeapTriggerJson.stringsToJson(settings.boxOrder))
             obj.addProperty("autoLeapEnabled", settings.autoLeapEnabled)
             obj.addProperty("autoLeapBossOnly", settings.autoLeapBossOnly)
+            obj.addProperty("bossOnlyTriggers", settings.bossOnlyTriggers)
             obj.addProperty("autoLeapDelayMs", settings.autoLeapDelayMs)
             obj.addProperty("doorOpenerLeapEnabled", settings.doorOpenerLeapEnabled)
             obj.addProperty("sortMode", settings.sortMode.name)

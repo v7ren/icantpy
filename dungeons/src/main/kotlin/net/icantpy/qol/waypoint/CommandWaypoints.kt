@@ -20,6 +20,10 @@ object CommandWaypoints {
     private val cooldown = HashMap<String, Int>()
     private var tickCount: Int = 0
 
+    /** Client level and world key of the last tick, to tell when a new visit to a world has started. */
+    private var lastLevel: Any? = null
+    private var lastWorldKey: String? = null
+
     /** World resolved once per client tick; render reuses it so frames do not rescan the sidebar. */
     private var tickWorld: WaypointWorld? = null
 
@@ -33,7 +37,9 @@ object CommandWaypoints {
         }
         val world = SkyblockWorlds.current()
         tickWorld = world
-        val player = Minecraft.getInstance().player ?: return
+        val mc = Minecraft.getInstance()
+        newVisitReset(mc.level, world)
+        val player = mc.player ?: return
         val occupied = HashSet<String>()
         for (waypoint in settings.waypoints) {
             if (!waypoint.enabled) continue
@@ -50,6 +56,22 @@ object CommandWaypoints {
         }
         inside.clear()
         inside.addAll(occupied)
+    }
+
+    /**
+     * "Once" lasts for one visit to a world, not the whole session. A new visit starts when the client level changes
+     * (Hypixel sends a fresh level on every server or island transfer) or when the world settles on a different known
+     * one. An unknown world, as the sidebar sometimes reads for a moment, never counts as a change.
+     */
+    private fun newVisitReset(level: Any?, world: WaypointWorld) {
+        val levelChanged = level !== lastLevel
+        val worldChanged = world.key != WaypointWorld.UNKNOWN && lastWorldKey != null && world.key != lastWorldKey
+        lastLevel = level
+        if (world.key != WaypointWorld.UNKNOWN) lastWorldKey = world.key
+        if (!levelChanged && !worldChanged) return
+        spent.clear()
+        inside.clear()
+        cooldown.clear()
     }
 
     fun render() {
@@ -75,6 +97,8 @@ object CommandWaypoints {
     }
 
     fun reset() {
+        lastLevel = null
+        lastWorldKey = null
         inside.clear()
         spent.clear()
         cooldown.clear()

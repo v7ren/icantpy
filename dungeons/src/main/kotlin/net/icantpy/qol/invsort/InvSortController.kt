@@ -5,6 +5,8 @@ import net.icantpy.Icantpy
 import net.icantpy.api.IcantpyCommandPrefix
 import net.icantpy.gui.McUi
 import net.icantpy.qol.auto.AutoActionQueue
+import net.icantpy.qol.fishing.FishingMacro
+import net.icantpy.qol.pets.PetSwap
 
 import net.icantpy.gui.config.icantpyKeyLabel
 import net.minecraft.client.Minecraft
@@ -168,6 +170,8 @@ object InvSortController {
         InvSortRunner.tick()
         AutoActionQueue.chainAfterSort()
         InvSortHotkeys.tick()
+        PetSwap.tick()
+        FishingMacro.tick()
         InvSortScreenEvents.attachIfInventory(McUi.currentScreen(Minecraft.getInstance()), generationToken)
         if (!openNextTick) return
         openNextTick = false
@@ -179,6 +183,8 @@ object InvSortController {
     fun onDisconnect() {
         InvSortRunner.cancel(reason = null)
         InvSortHotkeys.reset()
+        PetSwap.reset()
+        FishingMacro.reset()
         AutoActionQueue.clear()
         openNextTick = false
         pendingRun = null

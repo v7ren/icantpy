@@ -56,9 +56,20 @@ object LeapAutoLeapController {
             if (playerInfo?.isDead == true) return openManualMenu()
             return requestTarget(name, doorOpener = true)
         }
-        if (!orientEnabledInScope()) return false
-        val target = LeapMenu.centerPlayer(LeapRoster.knownPlayers()) ?: return openManualMenu()
-        if (target.isDead || LeapRoster.isSelf(target.name)) return openManualMenu()
+        if (!orientEnabledInScope()) {
+            LeapOrient.noteAutoLeap(scopeBlock())
+            return false
+        }
+        val target = LeapMenu.centerPlayer(LeapRoster.knownPlayers())
+        if (target == null) {
+            LeapOrient.noteAutoLeap("no oriented target, opened menu")
+            return openManualMenu()
+        }
+        if (target.isDead || LeapRoster.isSelf(target.name)) {
+            LeapOrient.noteAutoLeap("target ${target.name} dead or self, opened menu")
+            return openManualMenu()
+        }
+        LeapOrient.noteAutoLeap("leaping to ${target.name}")
         return requestTarget(target.name, doorOpener = false)
     }
 
@@ -157,6 +168,17 @@ object LeapAutoLeapController {
         val state = DungeonListener.state
         return cfg.enabled && cfg.orientEnabled && cfg.autoLeapEnabled && state.inDungeon &&
             (!cfg.autoLeapBossOnly || state.inBoss)
+    }
+
+    private fun scopeBlock(): String {
+        val cfg = LeapMenu.settings()
+        return when {
+            !cfg.enabled -> "blocked: Spirit Leap is disabled"
+            !cfg.orientEnabled -> "blocked: orient is off"
+            !cfg.autoLeapEnabled -> "blocked: Left-click auto leap is off"
+            cfg.autoLeapBossOnly && !DungeonListener.state.inBoss -> "blocked: auto leap is boss-only and no boss fight detected"
+            else -> "blocked: not in a dungeon"
+        }
     }
 
     private fun scopeId(doorOpener: Boolean): String =

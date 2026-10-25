@@ -4,9 +4,10 @@ package net.icantpy.gui.config
 internal enum class ConfigSection(val label: String) {
     HOME("Home"),
     DUNGEONS("Dungeons"),
-    COSMETICS("Cosmetics"),
-    QOL("Quality of life"),
+    BOSSES("Bosses"),
     SLAYER("Slayer"),
+    COSMETICS("Items & Cosmetics"),
+    QOL("Utility"),
     INTERFACE("Interface"),
 }
 
@@ -45,6 +46,14 @@ internal enum class ConfigPage(
         listOf(AetherModuleId.LEAP),
         listOf("Routes", "Layout", "Look", "Quick leap", "Keybinds", "Debug"),
     ),
+    BLOOD_HELPER(ConfigSection.DUNGEONS, "Blood Helper", "Aim at the box where each blood mob drops", listOf(AetherModuleId.BLOOD_HELPER)),
+    LIVID_HELPER(ConfigSection.BOSSES, "Livid Helper", "Aim at the real Livid in F5 and M5", listOf(AetherModuleId.LIVID_HELPER)),
+    CARRIES(ConfigSection.SLAYER, "Carry Counter", "Automatic customer boss completion tracking", listOf(AetherModuleId.CARRY), listOf("Counter", "Keys", "Players")),
+    FIRE_PITS(
+        ConfigSection.SLAYER, "Blaze", "Avoid fire, Quazii and Typhoeus in the Inferno Demonlord fight",
+        listOf(AetherModuleId.FIRE_PITS), listOf("Avoid fire", "Avoid Quazii", "Avoid Typhoeus"),
+    ),
+    BOSS_AIM(ConfigSection.SLAYER, "Aim Assist", "Curved, never-instant aim at your slayer boss", listOf(AetherModuleId.BOSS_AIM)),
     ITEMS(ConfigSection.COSMETICS, "Item Customize", "Custom item tags, glints, dyes & lore", listOf(AetherModuleId.RENAME, AetherModuleId.SHARE), listOf("Customize", "Sharing")),
     MORPH(ConfigSection.COSMETICS, "Morph", "Client-side player model overrides", listOf(AetherModuleId.MORPH)),
     VISUALS(
@@ -53,14 +62,11 @@ internal enum class ConfigPage(
     ),
     FREELOOK(ConfigSection.QOL, "Freelook", "Decouple camera rotation from movement", listOf(AetherModuleId.FREELOOK)),
     WAYPOINTS(ConfigSection.QOL, "Waypoints", "Walk-on trigger areas & command beacons", listOf(AetherModuleId.BOXES)),
-    STATS(ConfigSection.QOL, "Stats & Loadouts", "Gear presets, mask cooldowns & fast swaps", listOf(AetherModuleId.STATS, AetherModuleId.LOADOUT)),
+    STATS(ConfigSection.QOL, "Stats & Loadouts", "Gear presets, mask cooldowns, fast swaps & pet keys", listOf(AetherModuleId.STATS, AetherModuleId.LOADOUT)),
     SHARDS(ConfigSection.QOL, "Attribute Shards", "Find by shard or attribute, then track and buy", listOf(AetherModuleId.SHARDS)),
     INVENTORY_SORT(ConfigSection.QOL, "Inventory Sort", "Sort into saved preset layouts", listOf(AetherModuleId.INVENTORY_SORT)),
     DROP_ULT(ConfigSection.QOL, "Drop Ult", "Press Q while holding a weapon to cast ultimate", listOf(AetherModuleId.COMBAT)),
     PERFORMANCE(ConfigSection.QOL, "Performance", "Motion blur & max-FPS preset", listOf(AetherModuleId.PERFORMANCE)),
-    CARRIES(ConfigSection.SLAYER, "Carry Counter", "Automatic customer boss completion tracking", listOf(AetherModuleId.CARRY), listOf("Counter", "Keys", "Players")),
-    FIRE_PITS(ConfigSection.SLAYER, "Fire Pits", "Escape Inferno Demonlord fire pits", listOf(AetherModuleId.FIRE_PITS)),
-    BOSS_AIM(ConfigSection.SLAYER, "Boss Aim", "Curved, never-instant aim at your slayer boss", listOf(AetherModuleId.BOSS_AIM)),
     APPEARANCE(ConfigSection.INTERFACE, "Appearance", "Window theme, blur & responsive scaling", listOf(AetherModuleId.CLICK_GUI), listOf("Theme", "Text & shape", "Advanced")),
     HUD_LAYOUT(ConfigSection.INTERFACE, "HUD Layout", "Edit every HUD widget, overlay & card", listOf(AetherModuleId.HUD_EDIT)),
     ;

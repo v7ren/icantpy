@@ -83,13 +83,13 @@ object EscapeWalker {
     }
 
     /** Order matches the FORWARD..RIGHT indices: forward, back, left, right. */
-    private fun movementKeys(mc: Minecraft): Array<KeyMapping> {
+    internal fun movementKeys(mc: Minecraft): Array<KeyMapping> {
         val options = mc.options
         return arrayOf(options.keyUp, options.keyDown, options.keyLeft, options.keyRight)
     }
 
     /** Reads the hardware state, not KeyMapping.isDown, because the walker itself sets that flag. */
-    private fun physicallyDown(mc: Minecraft, mapping: KeyMapping): Boolean {
+    internal fun physicallyDown(mc: Minecraft, mapping: KeyMapping): Boolean {
         if (mapping.isUnbound) return false
         val bound = boundKey(mapping) ?: return false
         val handle = mc.window.handle()

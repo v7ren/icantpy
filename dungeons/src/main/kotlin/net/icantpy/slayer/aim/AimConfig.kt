@@ -58,6 +58,10 @@ data class AimConfig(
     /** Case-insensitive substrings matched against mob and hologram names, for other bosses. */
     val extraTargets: List<String> = emptyList(),
     val highlightTarget: Boolean = true,
+    /** Aim at the Watcher's blood mobs while clearing the blood room. */
+    val bloodAim: Boolean = false,
+    /** Aim at the real Livid in the F5/M5 boss room. */
+    val lividAim: Boolean = false,
     /** Aim at a slowly wandering point inside the hitbox instead of the exact aim point. */
     val lazyAim: Boolean = false,
     /** How far the lazy point may wander from the aim point: 0 = never, 1 = up to the hitbox edge. */
@@ -77,6 +81,9 @@ data class AimConfig(
         curve = curve,
         easing = easing,
     )
+
+    /** True when any aim feature is on: slayer aim, blood aim or Livid aim. */
+    val active: Boolean get() = enabled || bloodAim || lividAim
 
     fun toJsonObject(): JsonObject {
         val obj = JsonObject()
@@ -99,6 +106,8 @@ data class AimConfig(
         extraTargets.forEach { extras.add(it) }
         obj.add("extraTargets", extras)
         obj.addProperty("highlightTarget", highlightTarget)
+        obj.addProperty("bloodAim", bloodAim)
+        obj.addProperty("lividAim", lividAim)
         obj.addProperty("lazyAim", lazyAim)
         obj.addProperty("lazyStrength", lazyStrength)
         obj.addProperty("lazyDeadzone", lazyDeadzone)
@@ -181,6 +190,8 @@ data class AimConfig(
                 ownSlayerBoss = bool(obj, "ownSlayerBoss", defaults.ownSlayerBoss),
                 extraTargets = filterList(obj.get("extraTargets")) ?: defaults.extraTargets,
                 highlightTarget = bool(obj, "highlightTarget", defaults.highlightTarget),
+                bloodAim = bool(obj, "bloodAim", defaults.bloodAim),
+                lividAim = bool(obj, "lividAim", defaults.lividAim),
                 lazyAim = bool(obj, "lazyAim", defaults.lazyAim),
                 lazyStrength = float(obj, "lazyStrength", defaults.lazyStrength).coerceIn(0f, 1f),
                 lazyDeadzone = bool(obj, "lazyDeadzone", defaults.lazyDeadzone),

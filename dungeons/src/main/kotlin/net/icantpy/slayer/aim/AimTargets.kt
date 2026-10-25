@@ -70,13 +70,23 @@ object AimTargets {
 
     private fun pick(level: ClientLevel, player: LocalPlayer, config: AimConfig): LivingEntity? {
         val eye = player.getEyePosition(1f)
-        val own = if (config.ownSlayerBoss) ownSlayerBosses(level, player) else emptyList()
-        val extra = if (config.extraTargets.isEmpty()) emptyList() else extraTargets(level, player, config)
+        val own = if (config.enabled && config.ownSlayerBoss) ownSlayerBosses(level, player) else emptyList()
+        val extra = if (!config.enabled || config.extraTargets.isEmpty()) emptyList() else extraTargets(level, player, config)
+        val dungeon = dungeonTargets(level, config)
         val hold = holdContext(level, player)
-        val ownChoice = closestToCrosshair(level, player, eye, own, config, hold.attunement, hold.shields)
+        val dungeonChoice = closestToCrosshair(level, player, eye, dungeon, config, null, emptyMap())
+        val ownChoice = dungeonChoice ?: closestToCrosshair(level, player, eye, own, config, hold.attunement, hold.shields)
         val choice = ownChoice ?: closestToCrosshair(level, player, eye, extra, config, hold.attunement, hold.shields)
-        if (choice == null) lastMiss = describeMiss(level, player, eye, own + extra, config, hold)
+        if (choice == null) lastMiss = describeMiss(level, player, eye, own + extra + dungeon, config, hold)
         return choice
+    }
+
+    /** The real Livid, only when its option is on and the F5/M5 boss room is active. */
+    private fun dungeonTargets(level: ClientLevel, config: AimConfig): List<LivingEntity> {
+        if (!config.lividAim) return emptyList()
+        val out = ArrayList<LivingEntity>()
+        if (config.lividAim) out += DungeonAimTargets.livid(level)
+        return out
     }
 
     /**

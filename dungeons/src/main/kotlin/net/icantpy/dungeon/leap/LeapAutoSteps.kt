@@ -96,12 +96,29 @@ data class LeapAutoStep(
     val markBob: Boolean = true,
     /** MARK_PLAYER only: draw without depth testing. */
     val markThroughWalls: Boolean = false,
+    /** Whether the row always runs or is part of an if / else if / else chain. See [LeapConditions.plan]. */
+    val branch: LeapBranch = LeapBranch.ALWAYS,
+    /** Terms of an [LeapBranch.IF] or [LeapBranch.ELSE_IF] row, joined by each term's AND / OR. */
+    val conditions: List<LeapTerm> = emptyList(),
+    /**
+     * Queued actions and marks only: wait until the player has leaped to this class before the row runs. The leap
+     * target keeps its own lock on the card ([LeapOrientTrigger.requiresTargetClass]).
+     */
+    val requires: LeapDungeonClass = LeapDungeonClass.EMPTY,
 ) {
     /** True when a MARK_PLAYER row names its target by player name instead of class. */
     fun markTargetsPlayer(): Boolean = markBy.equals(LeapMarkRouter.BY_PLAYER, ignoreCase = true)
 
-    /** Text such as "Sort: P1" or "Sort: P1 (armed)". Stats ids missing from [presetLabels] show as "(missing)". */
-    fun label(presetLabels: Map<String, String> = emptyMap()): String = when (kind) {
+    /**
+     * Text such as "Sort: P1" or "If loadout is 3: Sort: P1", with " · after Tank" when the row waits on a leap.
+     * Stats ids missing from [presetLabels] show as "(missing)".
+     */
+    fun label(presetLabels: Map<String, String> = emptyMap()): String {
+        val wait = requires.takeIf { it.isReal() && kind != LeapAutoKind.LEAP_TARGET }?.let { " · after ${it.displayName}" }.orEmpty()
+        return LeapConditions.prefix(this) + baseLabel(presetLabels) + wait
+    }
+
+    private fun baseLabel(presetLabels: Map<String, String>): String = when (kind) {
         LeapAutoKind.LEAP_TARGET -> LeapAutoKind.LEAP_TARGET.label
         LeapAutoKind.FOLLOWUP_LEAP -> "Then: " + LeapFollowUp.destLabel(this)
         LeapAutoKind.MARK_PLAYER -> "Mark: " + LeapMarkRouter.summary(this)
@@ -261,7 +278,7 @@ object LeapAutoRouter {
 object LeapAutoStepList {
     fun moved(steps: List<LeapAutoStep>, from: Int, to: Int): List<LeapAutoStep> {
         if (from !in steps.indices || to !in steps.indices || from == to) return steps
-        return steps.toMutableList().apply { add(to, removeAt(from)) }
+        return LeapConditions.repaired(steps.toMutableList().apply { add(to, removeAt(from)) })
     }
 
     /**
@@ -276,7 +293,7 @@ object LeapAutoStepList {
     }
 
     fun removed(steps: List<LeapAutoStep>, index: Int): List<LeapAutoStep> =
-        if (index !in steps.indices) steps else steps.filterIndexed { i, _ -> i != index }
+        if (index !in steps.indices) steps else LeapConditions.repaired(steps.filterIndexed { i, _ -> i != index })
 
     /**
      * Replaces the step at [index]. A transform that would create a second leap target, or a follow-up
@@ -289,10 +306,14 @@ object LeapAutoStepList {
             steps.withIndex().any { (i, step) -> i != index && step.kind == LeapAutoKind.LEAP_TARGET }
         val makesOrphanFollowUp = changed.kind == LeapAutoKind.FOLLOWUP_LEAP && !LeapAutoStep.canBeFollowUp(steps, index)
         if (makesSecondLeap || makesOrphanFollowUp) return steps
-        return steps.mapIndexed { i, step -> if (i == index) changed else step }
+        return LeapConditions.repaired(steps.mapIndexed { i, step -> if (i == index) changed else step })
     }
 
     fun hasLeapTarget(steps: List<LeapAutoStep>): Boolean = steps.any { it.kind == LeapAutoKind.LEAP_TARGET }
+
+    /** Leap target and follow-up rows: their wait is the card lock or the follow-up window, not [LeapAutoStep.requires]. */
+    fun isLeapRow(step: LeapAutoStep): Boolean =
+        step.kind == LeapAutoKind.LEAP_TARGET || step.kind == LeapAutoKind.FOLLOWUP_LEAP
 
     /** Rows applied instantly (leap arms and marks), never queued as game actions. */
     fun isInstant(step: LeapAutoStep): Boolean = when (step.kind) {

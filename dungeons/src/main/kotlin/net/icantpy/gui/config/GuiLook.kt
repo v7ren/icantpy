@@ -28,18 +28,24 @@ enum class GuiLayoutId {
 }
 
 enum class GuiThemeId {
+    GLASS_DARK,
+    GLASS_LIGHT,
     MIDNIGHT,
     PHOSPHOR,
     PAPER,
     ;
 
     fun label(): String = when (this) {
+        GLASS_DARK -> "Glass dark"
+        GLASS_LIGHT -> "Glass light"
         MIDNIGHT -> "Midnight"
         PHOSPHOR -> "Phosphor"
         PAPER -> "Paper"
     }
 
     fun caption(): String = when (this) {
+        GLASS_DARK -> "Frosted grey, soft white"
+        GLASS_LIGHT -> "Frosted white, ink"
         MIDNIGHT -> "Black shell, white accent"
         PHOSPHOR -> "Black terminal, green"
         PAPER -> "Light page, ink"
@@ -47,7 +53,7 @@ enum class GuiThemeId {
 
     companion object {
         fun parse(raw: String?): GuiThemeId =
-            entries.firstOrNull { it.name.equals(raw?.trim(), ignoreCase = true) } ?: MIDNIGHT
+            entries.firstOrNull { it.name.equals(raw?.trim(), ignoreCase = true) } ?: GLASS_DARK
     }
 }
 
@@ -90,15 +96,19 @@ enum class GuiFontId {
 
 data class GuiLookSettings(
     val layout: GuiLayoutId = GuiLayoutId.RAIL,
-    val theme: GuiThemeId = GuiThemeId.MIDNIGHT,
+    val theme: GuiThemeId = GuiThemeId.GLASS_DARK,
     val font: GuiFontId = GuiFontId.SEGOE,
     val accentHex: String = "",
     val radius: Int = 12,
     val controlRadius: Int = 8,
     val backgroundBlur: Boolean = true,
+    /** Window opacity in percent for the glass themes. */
+    val opacity: Int = DEFAULT_OPACITY,
 ) {
     fun resolvedAccent(): Int? =
         accentHex.trim().takeIf { it.isNotEmpty() }?.let { HexColor.parse(it).getOrNull() }
+
+    fun withOpacity(value: Int): GuiLookSettings = copy(opacity = value.coerceIn(MIN_OPACITY, MAX_OPACITY))
 
     fun withRadius(value: Int): GuiLookSettings = copy(radius = value.coerceIn(0, 12))
 
@@ -107,16 +117,24 @@ data class GuiLookSettings(
     companion object {
         val RADIUS_PRESETS: List<Int> = listOf(0, 4, 8, 12)
 
+        const val MIN_OPACITY = 25
+        const val MAX_OPACITY = 95
+        const val DEFAULT_OPACITY = 62
+
+        /** Saved looks from before the glass design (no "design" key) move to the glass dark theme once. */
+        private const val DESIGN_VERSION = 2
+
         fun fromJson(obj: JsonObject?): GuiLookSettings {
             if (obj == null) return GuiLookSettings()
             return GuiLookSettings(
                 layout = GuiLayoutId.parse(string(obj, "layout")),
-                theme = GuiThemeId.parse(string(obj, "theme")),
+                theme = if (int(obj, "design", 1) < DESIGN_VERSION) GuiThemeId.GLASS_DARK else GuiThemeId.parse(string(obj, "theme")),
                 font = GuiFontId.parse(string(obj, "font")),
                 accentHex = string(obj, "accent").orEmpty(),
                 radius = int(obj, "radius", 12).coerceIn(0, 12),
                 controlRadius = int(obj, "controlRadius", 8).coerceIn(0, 12),
                 backgroundBlur = bool(obj, "blur", true),
+                opacity = int(obj, "opacity", DEFAULT_OPACITY).coerceIn(MIN_OPACITY, MAX_OPACITY),
             )
         }
 
@@ -129,6 +147,8 @@ data class GuiLookSettings(
             obj.addProperty("radius", look.radius)
             obj.addProperty("controlRadius", look.controlRadius)
             obj.addProperty("blur", look.backgroundBlur)
+            obj.addProperty("opacity", look.opacity)
+            obj.addProperty("design", DESIGN_VERSION)
             return obj
         }
 
@@ -163,6 +183,8 @@ internal data class GuiPalette(
     val danger: Int,
     val dangerSoft: Int,
     val field: Int,
+    /** Flat frosted look: no boxed rows, divider lines instead. */
+    val glass: Boolean = false,
 )
 
 internal data class GuiChrome(
@@ -181,7 +203,7 @@ internal data class GuiChrome(
 
     companion object {
         fun of(look: GuiLookSettings): GuiChrome = GuiChrome(
-            palette = look.theme.palette(look.resolvedAccent()),
+            palette = look.theme.palette(look.resolvedAccent(), look.opacity),
             typefaces = GuiFonts.of(look.font),
             layout = look.layout,
             radius = look.radius.toFloat(),
@@ -205,13 +227,15 @@ internal data class ConfigMetrics(
     val row: Int,
     /** Caps the width of page rows so wide windows do not stretch controls across the panel. */
     val maxContentWidth: Int = Int.MAX_VALUE,
+    /** Width of the right-hand "on this page" outline; 0 when the window is too narrow for it. */
+    val toc: Int = 0,
 ) {
     val viewTop: Int get() = panelY + header + tabBar + pageBar
     val viewBottom: Int get() = panelY + panelH - footer
     val viewHeight: Int get() = (viewBottom - viewTop).coerceAtLeast(1)
     val contentLeft: Int get() = panelX + sidebar
     val innerLeft: Int get() = contentLeft + if (sidebar == 0) 18 else 16
-    val innerWidth: Int get() = (panelW - sidebar - if (sidebar == 0) 36 else 32).coerceAtMost(maxContentWidth)
+    val innerWidth: Int get() = (panelW - sidebar - toc - if (sidebar == 0) 36 else 32).coerceAtMost(maxContentWidth)
     /** Right edge for a control, inset 8px from the row edge like the other row controls. */
     fun rightX(controlWidth: Int): Int = innerLeft + innerWidth - 8 - controlWidth
 
@@ -225,6 +249,7 @@ internal data class ConfigMetrics(
                 GuiLayoutId.RAIL -> ConfigMetrics(
                     screenW, screenH, panelX, panelY, panelW, panelH,
                     header = 50, footer = 0, sidebar = 156, tabBar = 0, pageBar = 30, row = 38,
+                    toc = if (panelW >= TOC_MIN_PANEL_WIDTH) TOC_WIDTH else 0,
                 )
                 GuiLayoutId.RIBBON -> ConfigMetrics(
                     screenW, screenH, panelX, panelY, panelW, panelH,
@@ -239,8 +264,57 @@ internal data class ConfigMetrics(
     }
 }
 
-internal fun GuiThemeId.palette(accentRgb: Int?): GuiPalette {
+private const val TOC_MIN_PANEL_WIDTH = 640
+private const val TOC_WIDTH = 118
+
+internal fun GuiThemeId.palette(accentRgb: Int?, opacity: Int = GuiLookSettings.DEFAULT_OPACITY): GuiPalette {
+    val windowAlpha = (opacity.coerceIn(GuiLookSettings.MIN_OPACITY, GuiLookSettings.MAX_OPACITY) * 255 / 100) shl 24
     val base = when (this) {
+        GuiThemeId.GLASS_DARK -> GuiPalette(
+            scrim = 0x59000000,
+            window = windowAlpha or 0x1E2026,
+            sidebar = 0x09FFFFFF,
+            header = 0x06FFFFFF,
+            group = 0x0DFFFFFF,
+            rowHover = 0x14FFFFFF,
+            text = 0xFFEEF0F4.toInt(),
+            secondary = 0xFF9AA1AE.toInt(),
+            tertiary = 0xFF6F7684.toInt(),
+            accent = 0xFFD5D9E1.toInt(),
+            activeAccent = 0xFFD5D9E1.toInt(),
+            accentSoft = 0x1FFFFFFF,
+            accentInk = 0xFF14161A.toInt(),
+            line = 0x17FFFFFF,
+            trackOff = 0x33FFFFFF,
+            knob = 0xFFFFFFFF.toInt(),
+            danger = 0xFFF87171.toInt(),
+            dangerSoft = 0x33F87171,
+            field = 0x14FFFFFF,
+            glass = true,
+        )
+        GuiThemeId.GLASS_LIGHT -> GuiPalette(
+            scrim = 0x40000000,
+            window = windowAlpha or 0xFFFFFF,
+            sidebar = 0x66F0F2F6,
+            header = 0x4DFFFFFF,
+            group = 0x66FFFFFF,
+            rowHover = 0x14141928,
+            text = 0xFF12141A.toInt(),
+            secondary = 0xFF5F6674.toInt(),
+            tertiary = 0xFF8A91A0.toInt(),
+            accent = 0xFF2B2E36.toInt(),
+            activeAccent = 0xFF2B2E36.toInt(),
+            accentSoft = 0x1A141928,
+            accentInk = 0xFFFFFFFF.toInt(),
+            line = 0x1A141928,
+            trackOff = 0x403C4254,
+            knob = 0xFFFFFFFF.toInt(),
+            danger = 0xFFC62828.toInt(),
+            dangerSoft = 0x22C62828,
+            field = 0x99FFFFFF.toInt(),
+            glass = true,
+        )
+
         GuiThemeId.MIDNIGHT -> GuiPalette(
             // Aether reference: charcoal glass, lavender primary, and cyan/pink ambient accents.
             scrim = 0xF0050607.toInt(),

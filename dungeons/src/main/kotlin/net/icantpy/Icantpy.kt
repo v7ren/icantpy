@@ -17,6 +17,8 @@ import net.icantpy.cosmetics.items.CustomCosmeticsShare
 import net.icantpy.cosmetics.items.CustomRename
 import net.icantpy.cosmetics.items.CustomRenameEditorSession
 import net.icantpy.qol.camera.Freelook
+import net.icantpy.qol.fishing.FishingMacro
+import net.icantpy.qol.pets.PetSwap
 import net.icantpy.qol.visual.Visuals
 import net.icantpy.qol.perf.Culling
 import net.icantpy.qol.perf.FrameGen
@@ -42,6 +44,7 @@ import net.icantpy.hud.WorldEsp
 import net.icantpy.slayer.SlayerCarryCounter
 import net.icantpy.slayer.blaze.FirePit
 import net.icantpy.slayer.blaze.QuaziiBeamDodge
+import net.icantpy.slayer.aim.BloodAimPoints
 import net.icantpy.slayer.aim.BossAim
 import net.icantpy.slayer.aim.BossStrafe
 import net.icantpy.qol.path.Navigator
@@ -100,6 +103,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         loadDragons()
         CustomRename.load()
         Freelook.load()
+        PetSwap.load()
+        FishingMacro.load()
         MotionBlur.load()
         PerformancePreset.load()
         Culling.load()
@@ -236,7 +241,9 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         DragonController.onChat(message)
         MaskTimers.onChat(message)
         QuaziiBeamDodge.onChat(message)
+        BloodAimPoints.onChat(message)
         Loadout.onChat(message)
+        PetSwap.onChat(message)
     }
 
     override fun onBlock(pos: BlockPos, state: BlockState) {
@@ -552,6 +559,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         loadDragons()
         CustomRename.load()
         Freelook.load()
+        PetSwap.load()
+        FishingMacro.load()
         MotionBlur.load()
         PerformancePreset.load()
         Culling.load()

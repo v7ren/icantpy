@@ -2,11 +2,17 @@ package net.icantpy.gui.config
 
 import net.icantpy.dungeon.leap.LeapAutoKind
 import net.icantpy.dungeon.leap.LeapAutoStep
+import net.icantpy.dungeon.leap.LeapBranch
 import net.icantpy.dungeon.leap.LeapCenterTarget
+import net.icantpy.dungeon.leap.LeapConditions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+
+private val BRANCH_ROWS = setOf(
+    LeapCardRow.STEP_BRANCH, LeapCardRow.STEP_COND, LeapCardRow.STEP_COND_ADD, LeapCardRow.STEP_REQUIRES,
+)
 
 class LeapTriggerLayoutTest {
     private val cardX = 40
@@ -102,7 +108,7 @@ class LeapTriggerLayoutTest {
     fun leapSettingsAppearOnlyUnderALeapTargetRow() {
         val on = LeapTriggerLayout.rows(shape(armLeap = true, steps = 1))
         val leapRow = on.indexOfFirst { it.row == LeapCardRow.STEP && it.step == 0 }
-        val nested = on.withIndex().filter { it.value.indented }
+        val nested = on.withIndex().filter { it.value.indented && it.value.row !in BRANCH_ROWS }
         assertEquals(
             listOf(
                 LeapCardRow.HOLD_MODE,
@@ -123,7 +129,7 @@ class LeapTriggerLayoutTest {
     @Test
     fun noLeapTargetRowMeansNoLeapSettings() {
         val off = LeapTriggerLayout.rows(shape(armLeap = false, steps = 2))
-        assertTrue(off.none { it.indented }, "no nested rows without a leap target")
+        assertTrue(off.none { it.indented && it.row !in BRANCH_ROWS }, "no nested rows without a leap target")
         val offRows = off.map { it.row }
         assertFalse(LeapCardRow.CENTER_ON in offRows)
         assertFalse(LeapCardRow.CLASS in offRows)
@@ -178,7 +184,7 @@ class LeapTriggerLayoutTest {
     @Test
     fun actionRowsComeLastInRunOrder() {
         val rows = LeapTriggerLayout.rows(shape(armLeap = false, steps = 2))
-        val tail = rows.takeLast(3).map { it.row to it.step }
+        val tail = rows.filter { it.row == LeapCardRow.STEP || it.row == LeapCardRow.ADD_STEP }.takeLast(3).map { it.row to it.step }
         assertEquals(listOf(LeapCardRow.STEP to 0, LeapCardRow.STEP to 1, LeapCardRow.ADD_STEP to 2), tail)
     }
 
@@ -288,5 +294,52 @@ class LeapTriggerLayoutTest {
     @Test
     fun headerWithoutTestButtonHasNoTestRect() {
         assertEquals(null, LeapTriggerLayout.header(cardX, cardY, cardW, deleteWidth = 64).test)
+    }
+
+    private fun branchShape(kind: LeapAutoKind, branch: LeapBranch, terms: Int) = LeapCardShape(
+        clock = false, leaped = false, chain = false, groupedPreset = false, centerTarget = LeapCenterTarget.CLASS,
+        stepKinds = listOf(kind), stepBranches = mapOf(0 to branch), stepTermCounts = mapOf(0 to terms),
+    )
+
+    @Test
+    fun everyActionGetsABranchRowAndOnlyQueuedKindsGetRequires() {
+        val loadout = LeapTriggerLayout.rows(branchShape(LeapAutoKind.SWITCH_LOADOUT, LeapBranch.ALWAYS, 0)).map { it.row }
+        assertTrue(LeapCardRow.STEP_BRANCH in loadout)
+        assertTrue(LeapCardRow.STEP_REQUIRES in loadout)
+        assertFalse(LeapCardRow.STEP_COND in loadout)
+        val leap = LeapTriggerLayout.rows(branchShape(LeapAutoKind.LEAP_TARGET, LeapBranch.ALWAYS, 0)).map { it.row }
+        assertTrue(LeapCardRow.STEP_BRANCH in leap)
+        assertFalse(LeapCardRow.STEP_REQUIRES in leap, "the leap target keeps the card-level Requires row")
+        assertTrue(LeapCardRow.REQUIRES in leap)
+    }
+
+    @Test
+    fun conditionRowsAppearOnlyForIfAndElseIfAndStopAtTheCap() {
+        fun condRows(branch: LeapBranch, terms: Int) =
+            LeapTriggerLayout.rows(branchShape(LeapAutoKind.SWITCH_LOADOUT, branch, terms))
+                .filter { it.row == LeapCardRow.STEP_COND || it.row == LeapCardRow.STEP_COND_ADD }
+        assertTrue(condRows(LeapBranch.ALWAYS, 2).isEmpty())
+        assertTrue(condRows(LeapBranch.ELSE, 2).isEmpty())
+        val two = condRows(LeapBranch.IF, 2)
+        assertEquals(listOf(LeapCardRow.STEP_COND, LeapCardRow.STEP_COND, LeapCardRow.STEP_COND_ADD), two.map { it.row })
+        assertEquals(listOf(0, 1), two.filter { it.row == LeapCardRow.STEP_COND }.map { it.term })
+        assertTrue(two.all { it.indented })
+        val full = condRows(LeapBranch.ELSE_IF, LeapConditions.MAX_TERMS)
+        assertTrue(full.none { it.row == LeapCardRow.STEP_COND_ADD }, "no add row at the cap")
+    }
+
+    @Test
+    fun conditionControlsFitTheRowWithoutOverlap() {
+        val control = LeapTriggerLayout.controlRect(LeapTriggerLayout.rowRect(cardX, cardY, cardW, 0))
+        for (hasJoin in listOf(false, true)) {
+            val parts = LeapTriggerLayout.condControls(control, hasJoin)
+            val all = listOfNotNull(parts.join, parts.not, parts.fact, parts.value, parts.remove)
+            for (i in all.indices) {
+                assertTrue(all[i].x >= control.x && all[i].right <= control.right, "part $i leaves the control")
+                for (j in i + 1 until all.size) assertFalse(all[i].overlaps(all[j]), "parts $i and $j overlap")
+            }
+            assertEquals(hasJoin, parts.join != null)
+            assertTrue(parts.value.w >= 40, "value picker keeps a usable width")
+        }
     }
 }

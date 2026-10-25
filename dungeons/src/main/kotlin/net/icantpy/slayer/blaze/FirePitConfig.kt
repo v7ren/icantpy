@@ -16,6 +16,21 @@ enum class EscapeMode(val id: String, val label: String) {
     }
 }
 
+/**
+ * The earliest pit colour that counts as a pit. Pits turn red, then yellow, then black before fire appears, so a
+ * later phase means a later (and shorter) warning. Earlier-phase blocks are listed in [earlier].
+ */
+enum class PitPhase(val id: String, val label: String, val earlier: List<String>) {
+    RED("red", "Red", emptyList()),
+    YELLOW("yellow", "Yellow", listOf("minecraft:red_terracotta")),
+    BLACK("black", "Black", listOf("minecraft:red_terracotta", "minecraft:yellow_terracotta")),
+    ;
+
+    companion object {
+        fun fromId(raw: String?): PitPhase? = entries.firstOrNull { it.id == raw?.trim()?.lowercase() }
+    }
+}
+
 /** What the Quazii beam helper does: nothing, a warning only, or a warning plus a jump press. */
 enum class BeamDodge(val id: String, val label: String) {
     OFF("off", "Off"),
@@ -63,7 +78,49 @@ data class FirePitConfig(
     val avoidQuaziiBody: Boolean = true,
     /** Moves the beam jump this many ticks earlier than the measured timing. */
     val beamJumpEarlyTicks: Int = 0,
+    /** Treat the block Quazii stands on, and everything within [quaziiStandRadius], like a fire pit. Needs [enabled]. */
+    val quaziiStand: Boolean = false,
+    /** Blocks around Quazii's feet that count as a pit; 0 is just the block he stands on. */
+    val quaziiStandRadius: Float = DEFAULT_QUAZII_STAND_RADIUS,
+    /** Treat the zone around mobs named in [avoidMobNames] like a fire pit. Needs [enabled]. */
+    val avoidMobs: Boolean = true,
+    /** Comma separated name parts, case-insensitive, matched against name tags such as "Typhoeus". */
+    val avoidMobNames: String = "Typhoeus",
+    /** Blocks around each matching mob's feet that count as a pit. */
+    val avoidMobRadius: Float = DEFAULT_QUAZII_STAND_RADIUS,
+    /** Treat the ground around every fire pillar ("2s 8 hits" countdown stand) like a pit. Needs [enabled]. */
+    val avoidPillars: Boolean = true,
+    /** Blocks around a fire pillar that count as a pit. */
+    val pillarRadius: Float = DEFAULT_PILLAR_RADIUS,
+    /** Earliest pit colour that counts as a pit. */
+    val pitPhase: PitPhase = PitPhase.RED,
+    /** Detection speed limit for pits: a pit must be seen this long before it counts. 0 reacts at once. */
+    val pitDelayMs: Int = 0,
+    /** Detection speed limit for fire on the ground: fire must be seen this long before it counts. */
+    val fireDelayMs: Int = 0,
+    /**
+     * While airborne, steer in the air (client movement only) when the predicted landing block is a pit, fire or
+     * Quazii's zone.
+     */
+    val airAvoid: Boolean = false,
+    /**
+     * Priorities, 0-10, higher wins. When two hazards compete, the higher one gets the action bar line, and a hazard
+     * you stand in that outranks the beam stops the beam jump. Ties go to the beam (it still jumps and warns).
+     */
+    val priorityBeam: Int = DEFAULT_PRIORITY_BEAM,
+    val priorityFire: Int = DEFAULT_PRIORITY_FIRE,
+    val priorityPitRed: Int = DEFAULT_PRIORITY_PIT_RED,
+    val priorityPitYellow: Int = DEFAULT_PRIORITY_PIT_YELLOW,
+    val priorityPitBlack: Int = DEFAULT_PRIORITY_PIT_BLACK,
+    val priorityQuaziiZone: Int = DEFAULT_PRIORITY_QUAZII_ZONE,
 ) {
+    /** Priority of a pit in [phase] 0 (red), 1 (yellow) or 2 (black). */
+    fun pitPriority(phase: Int): Int = when (phase) {
+        1 -> priorityPitYellow
+        2 -> priorityPitBlack
+        else -> priorityPitRed
+    }
+
     fun toJsonObject(): JsonObject {
         val obj = JsonObject()
         obj.addProperty("version", FORMAT_VERSION)
@@ -85,6 +142,23 @@ data class FirePitConfig(
         obj.addProperty("beamDodgeBelowHp", beamDodgeBelowHp)
         obj.addProperty("avoidQuaziiBody", avoidQuaziiBody)
         obj.addProperty("beamJumpEarlyTicks", beamJumpEarlyTicks)
+        obj.addProperty("quaziiStand", quaziiStand)
+        obj.addProperty("quaziiStandRadius", quaziiStandRadius)
+        obj.addProperty("avoidMobs", avoidMobs)
+        obj.addProperty("avoidMobNames", avoidMobNames)
+        obj.addProperty("avoidMobRadius", avoidMobRadius)
+        obj.addProperty("avoidPillars", avoidPillars)
+        obj.addProperty("pillarRadius", pillarRadius)
+        obj.addProperty("pitPhase", pitPhase.id)
+        obj.addProperty("pitDelayMs", pitDelayMs)
+        obj.addProperty("fireDelayMs", fireDelayMs)
+        obj.addProperty("airAvoid", airAvoid)
+        obj.addProperty("priorityBeam", priorityBeam)
+        obj.addProperty("priorityFire", priorityFire)
+        obj.addProperty("priorityPitRed", priorityPitRed)
+        obj.addProperty("priorityPitYellow", priorityPitYellow)
+        obj.addProperty("priorityPitBlack", priorityPitBlack)
+        obj.addProperty("priorityQuaziiZone", priorityQuaziiZone)
         return obj
     }
 
@@ -116,6 +190,24 @@ data class FirePitConfig(
         const val DEFAULT_BEAM_DODGE_BELOW_HP: Int = 100
 
         const val MAX_BEAM_JUMP_EARLY_TICKS: Int = 6
+
+        const val DEFAULT_PILLAR_RADIUS: Float = 3f
+
+        const val MIN_QUAZII_STAND_RADIUS: Float = 0f
+        const val MAX_QUAZII_STAND_RADIUS: Float = 6f
+        const val DEFAULT_QUAZII_STAND_RADIUS: Float = 3f
+
+        const val MAX_DETECT_DELAY_MS: Int = 1000
+
+        const val MAX_PRIORITY: Int = 10
+
+        /** The beam hits harder than ground fire, but a pit in its yellow phase (fire next) outranks the beam. */
+        const val DEFAULT_PRIORITY_BEAM: Int = 5
+        const val DEFAULT_PRIORITY_FIRE: Int = 3
+        const val DEFAULT_PRIORITY_PIT_RED: Int = 4
+        const val DEFAULT_PRIORITY_PIT_YELLOW: Int = 7
+        const val DEFAULT_PRIORITY_PIT_BLACK: Int = 8
+        const val DEFAULT_PRIORITY_QUAZII_ZONE: Int = 6
 
         /**
          * Confirmed from a T4 fight's debug log: each pit is a plus of floor blocks that turns red, then yellow,
@@ -172,6 +264,26 @@ data class FirePitConfig(
                 avoidQuaziiBody = bool(obj, "avoidQuaziiBody", defaults.avoidQuaziiBody),
                 beamJumpEarlyTicks = int(obj, "beamJumpEarlyTicks", defaults.beamJumpEarlyTicks)
                     .coerceIn(0, MAX_BEAM_JUMP_EARLY_TICKS),
+                quaziiStand = bool(obj, "quaziiStand", defaults.quaziiStand),
+                quaziiStandRadius = float(obj, "quaziiStandRadius", defaults.quaziiStandRadius)
+                    .coerceIn(MIN_QUAZII_STAND_RADIUS, MAX_QUAZII_STAND_RADIUS),
+                avoidMobs = bool(obj, "avoidMobs", defaults.avoidMobs),
+                avoidMobNames = string(obj, "avoidMobNames") ?: defaults.avoidMobNames,
+                avoidMobRadius = float(obj, "avoidMobRadius", defaults.avoidMobRadius)
+                    .coerceIn(MIN_QUAZII_STAND_RADIUS, MAX_QUAZII_STAND_RADIUS),
+                avoidPillars = bool(obj, "avoidPillars", defaults.avoidPillars),
+                pillarRadius = float(obj, "pillarRadius", defaults.pillarRadius)
+                    .coerceIn(MIN_QUAZII_STAND_RADIUS, MAX_QUAZII_STAND_RADIUS),
+                pitPhase = PitPhase.fromId(string(obj, "pitPhase")) ?: defaults.pitPhase,
+                pitDelayMs = int(obj, "pitDelayMs", defaults.pitDelayMs).coerceIn(0, MAX_DETECT_DELAY_MS),
+                fireDelayMs = int(obj, "fireDelayMs", defaults.fireDelayMs).coerceIn(0, MAX_DETECT_DELAY_MS),
+                airAvoid = bool(obj, "airAvoid", defaults.airAvoid),
+                priorityBeam = priority(obj, "priorityBeam", defaults.priorityBeam),
+                priorityFire = priority(obj, "priorityFire", defaults.priorityFire),
+                priorityPitRed = priority(obj, "priorityPitRed", defaults.priorityPitRed),
+                priorityPitYellow = priority(obj, "priorityPitYellow", defaults.priorityPitYellow),
+                priorityPitBlack = priority(obj, "priorityPitBlack", defaults.priorityPitBlack),
+                priorityQuaziiZone = priority(obj, "priorityQuaziiZone", defaults.priorityQuaziiZone),
             )
         }
 
@@ -197,6 +309,9 @@ data class FirePitConfig(
             val number = number(obj, key) ?: return default
             return number.toInt()
         }
+
+        private fun priority(obj: JsonObject, key: String, default: Int): Int =
+            int(obj, key, default).coerceIn(0, MAX_PRIORITY)
 
         private fun float(obj: JsonObject, key: String, default: Float): Float {
             val number = number(obj, key) ?: return default
