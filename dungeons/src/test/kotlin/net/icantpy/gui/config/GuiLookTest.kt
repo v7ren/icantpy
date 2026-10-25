@@ -96,14 +96,15 @@ class GuiLookTest {
 
     @Test
     fun featureInventoryMatchesReferenceSections() {
-        assertEquals(24, AetherModules.all.size)
+        assertEquals(25, AetherModules.all.size)
         fun featureCount(section: ConfigSection) = ConfigPage.entries
             .filter { it.section == section }
             .sumOf { it.moduleIds.size }
-        assertEquals(7, featureCount(ConfigSection.DUNGEONS))
+        assertEquals(8, featureCount(ConfigSection.DUNGEONS))
         assertEquals(8, featureCount(ConfigSection.QOL))
         assertEquals(2, featureCount(ConfigSection.INTERFACE))
         assertTrue(ConfigPage.LEAP in ConfigNav.search("leap"))
+        assertTrue(ConfigPage.TERMINALS in ConfigNav.search("terminal solver"))
     }
 
     @Test

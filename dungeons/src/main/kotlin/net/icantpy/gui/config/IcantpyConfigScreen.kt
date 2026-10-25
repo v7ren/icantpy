@@ -86,6 +86,7 @@ import net.icantpy.slayer.aim.BossAim
 import net.icantpy.dungeon.timer.AlertSounds
 import net.icantpy.dungeon.dragons.DragonController
 import net.icantpy.dungeon.score.ScoreTracker
+import net.icantpy.dungeon.terminal.TerminalOverlay
 import net.icantpy.dungeon.splits.RunSplitsController
 import net.icantpy.dungeon.timer.TickTimers
 import net.icantpy.dungeon.timer.TimerClock
@@ -152,6 +153,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private val splitsPage = SplitsPage()
     private val scorePage = ScorePage()
     private val dragonsPage = DragonsPage()
+    private val terminalsPage = TerminalsPage()
     private var focused: String? = null
     private var toast: String? = null
     private var toastUntil = 0L
@@ -279,6 +281,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         ConfigContent.SPLITS -> splitsPage.draw(draw, m, y, ::toast) { openRunHudEditor(RunHudEditorScreen.Target.SPLITS) }
         ConfigContent.SCORE -> scorePage.draw(draw, m, y) { openRunHudEditor(RunHudEditorScreen.Target.SCORE) }
         ConfigContent.DRAGONS -> dragonsPage.draw(draw, m, y, ::toast) { openRunHudEditor(RunHudEditorScreen.Target.DRAGON) }
+        ConfigContent.TERMINALS -> terminalsPage.draw(draw, m, y) { McUi.setScreen(Minecraft.getInstance(), TerminalPreviewScreen()) }
         ConfigContent.LEAP_ROUTES -> drawLeapRoute(draw, y)
         ConfigContent.LEAP_LAYOUT -> drawLeapLayout(draw, y)
         ConfigContent.LEAP_LOOK -> drawLeapLook(draw, y)
@@ -4135,6 +4138,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             AetherModuleId.SPLITS -> RunSplitsController.settings.enabled
             AetherModuleId.SCORE -> ScoreTracker.settings.enabled
             AetherModuleId.DRAGONS -> DragonController.settings().enabled
+            AetherModuleId.TERMINALS -> TerminalOverlay.settings.enabled
             else -> module.defaultEnabled
         }
     }
@@ -4168,6 +4172,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             AetherModuleId.SPLITS -> RunSplitsController.updateSettings { it.copy(enabled = !it.enabled) }
             AetherModuleId.SCORE -> ScoreTracker.updateSettings { it.copy(enabled = !it.enabled) }
             AetherModuleId.DRAGONS -> DragonController.updateSettings { it.copy(enabled = !it.enabled) }
+            AetherModuleId.TERMINALS -> TerminalOverlay.updateSettings { it.copy(enabled = !it.enabled) }
             AetherModuleId.CLICK_GUI, AetherModuleId.HUD_EDIT -> {
                 aetherOverrides[module.id] = !(aetherOverrides[module.id] ?: module.defaultEnabled)
             }

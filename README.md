@@ -77,6 +77,26 @@ Both automation toggles are off by default; missing target heads never select an
 Current loaders intercept left clicks immediately. Older loaders can use the payload tick
 fallback, which may miss taps shorter than a client tick and allows the initial vanilla swing.
 
+### Terminals
+
+Replaces the F7/M7 phase 3 terminal chests with a solver panel that shows only the cells that matter:
+Correct all the panes, Click in order (next three numbered and coloured), What starts with, Select all the colour,
+Change all to same color (shortest left/right click count per pane), and Click the button on time (melody).
+
+Every click is still yours: the panel sends at most one container click per mouse press.
+
+- Per-terminal toggles
+- Click button (middle by default, so items never land on the cursor) and optional blocking of wrong or out-of-order clicks
+- Instant click feedback that reverts if the server does not confirm the click
+- First-click delay (350 ms by default) drops clicks made just as a terminal opens
+- Scale, cell gap, panel opacity, title and clicks-left header, item icons, hidden wrong or finished cells
+- Colours for click, second and third in order, finished, wrong, panel, text, and left/right click numbers
+- Preset themes, cell styles, corners, borders, header layout, hover, fade, and screen dim; styles can be shared as text
+- Built-in fonts, or your own `.ttf`/`.otf` files from `config/icantpy-fonts`
+
+Dungeons → Terminals → Open preview tries the panel on sample terminals: click cells to solve them, drag the panel to
+place it, `+`/`-` to scale, arrow keys to switch terminal.
+
 ### Rename
 
 NEU-style item customizer for held items. Opens from `/icantpy rename` or `/icantpy custom`.

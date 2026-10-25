@@ -14,7 +14,7 @@ class ConfigTabTest {
         )
         assertEquals(listOf("Overview"), pageTitles(ConfigSection.HOME))
         assertEquals(
-            listOf("Clocks", "Alerts", "Splits & PBs", "Score", "Wither Dragons", "Spirit Leap"),
+            listOf("Clocks", "Alerts", "Splits & PBs", "Score", "Wither Dragons", "Terminals", "Spirit Leap"),
             pageTitles(ConfigSection.DUNGEONS),
         )
         assertEquals(listOf("Item Customize", "Morph", "Visuals"), pageTitles(ConfigSection.COSMETICS))

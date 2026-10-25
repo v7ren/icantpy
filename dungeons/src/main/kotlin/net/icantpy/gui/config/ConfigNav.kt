@@ -40,6 +40,10 @@ internal enum class ConfigPage(
         ConfigSection.DUNGEONS, "Wither Dragons", "Priority, spawn timers & dragon kills",
         listOf(AetherModuleId.DRAGONS),
     ),
+    TERMINALS(
+        ConfigSection.DUNGEONS, "Terminals", "Customizable solver panel for phase 3 terminals",
+        listOf(AetherModuleId.TERMINALS),
+    ),
     LEAP(
         ConfigSection.DUNGEONS, "Spirit Leap", "Routes, trigger cards & auto-leap",
         listOf(AetherModuleId.LEAP),
