@@ -212,8 +212,12 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private var leapDropdownSpec: LeapDropdownSpec? = null
     private var openDropdownRects: List<LayoutRect> = emptyList()
     private var pendingRevealId: String? = null
-    private var debugBossEvent = LeapTriggerEvent.BOSS_STORM_END
-    private var debugFireEvent = LeapTriggerEvent.SECRETS_REACHED
+    private var debugBossEvent: LeapTriggerEvent
+        get() = DebugUiMemory.bossEvent
+        set(value) { DebugUiMemory.bossEvent = value }
+    private var debugFireEvent: LeapTriggerEvent
+        get() = DebugUiMemory.fireEvent
+        set(value) { DebugUiMemory.fireEvent = value }
     private var debugPartyToken = "arch"
     private var renamePreview: RenamePreview? = null
     private var metrics = ConfigMetrics.compute(640, 360, GuiLookSettings())
@@ -1255,6 +1259,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun drawLeapDebug(draw: MenuDraw, startY: Int): Int {
+        DebugUiMemory.ensureLoaded()
         val helpY = pageHelp(draw, startY, "Simulate the live party-chat and boss event pipeline.")
         if (!TickTimers.settings.debugMode && !LeapOrient.debugActive()) {
             return note(draw, helpY, "Turn on debug mode to simulate the live event pipeline.")
@@ -1463,7 +1468,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                     val selectX = rightX(0) - selectW - 8 - valueW
                     draw.field(
                         "debug:fire:value",
-                        field("debug:fire:value"),
+                        field("debug:fire:value", DebugUiMemory.fireValue),
                         "value",
                         selectX + selectW + 8,
                         cy,
@@ -1482,7 +1487,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                     ) { choice -> debugFireEvent = events[choice] }
                 }
                 else -> actionRow(draw, rowY, "Fire", "Honors card filters, or ignores match text for every card.", last = true) { cy ->
-                    val value = field("debug:fire:value")
+                    val value = field("debug:fire:value", DebugUiMemory.fireValue).also { DebugUiMemory.fireValue = it }
                     val all = draw.button("Ignore filters", rightX(120), cy, ButtonStyle.GHOST) {
                         toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = false))
                     }
