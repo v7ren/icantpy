@@ -58,11 +58,17 @@ object LeapAutoLeapController {
         if (McUi.currentScreen(mc) != null) return noted("blocked: a screen is open")
         if (pending != null) return true
         if (LeapAutoLeapPolicy.doorOpenerClick(cfg, inDungeon(), inBossRoom(player))) {
-            val name = LeapAutoLeapDoorOpener.latestName() ?: return ignored("no door opener known, left click ignored")
-            if (LeapRoster.isSelf(name)) return ignored("you opened the door, left click ignored")
-            val playerInfo = LeapRoster.knownPlayers().firstOrNull { it.name.equals(name, ignoreCase = true) }
-            if (playerInfo?.isDead == true) return ignored("door opener $name is dead, left click ignored")
-            return requestTarget(name, doorOpener = true)
+            val name = LeapAutoLeapDoorOpener.latestName()
+            val playerInfo = name?.let { n -> LeapRoster.knownPlayers().firstOrNull { it.name.equals(n, ignoreCase = true) } }
+            when {
+                name == null -> LeapOrient.noteAutoLeap("door opener mode: no door opener known yet, trying the center target")
+                LeapRoster.isSelf(name) -> LeapOrient.noteAutoLeap("door opener mode: you opened the door, trying the center target")
+                playerInfo?.isDead == true -> LeapOrient.noteAutoLeap("door opener mode: $name is dead, trying the center target")
+                else -> {
+                    LeapOrient.flow("left click: door opener mode, leaping to $name")
+                    return requestTarget(name, doorOpener = true)
+                }
+            }
         }
         if (!orientEnabledInScope()) return ignored(scopeBlock())
         // Left click only leaps to the oriented center target. With none, it does nothing; right-click opens the menu.

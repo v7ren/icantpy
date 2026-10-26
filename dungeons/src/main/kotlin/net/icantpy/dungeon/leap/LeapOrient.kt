@@ -1383,11 +1383,16 @@ object LeapOrient {
     private fun classOf(sender: String): LeapDungeonClass = LeapRoster.classOf(sender, settings())
 
     private var lastAutoLeapNote: String = ""
+    private var lastAutoLeapNoteAt: Long = 0L
 
     /** Debug-only reason a left-click Spirit Leap did not auto leap; repeats of the same reason are dropped. */
     fun noteAutoLeap(detail: String) {
-        if (!debugActive() || detail == lastAutoLeapNote) return
+        if (!debugActive()) return
+        val now = System.currentTimeMillis()
+        // A repeat of the same reason is only dropped when it follows within a second, so every separate click shows up.
+        if (detail == lastAutoLeapNote && now - lastAutoLeapNoteAt < 1_000L) return
         lastAutoLeapNote = detail
+        lastAutoLeapNoteAt = now
         flow("left click: $detail")
     }
 
