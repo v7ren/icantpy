@@ -27,6 +27,17 @@ class LeapTriggerLockStateTest {
     }
 
     @Test
+    fun rowRequiringHealerIsNotSatisfiedByALeapToTankEvenAfterAnEarlierHealerLeap() {
+        val step = LeapAutoStep.leapTarget().copy(requires = LeapDungeonClass.HEALER)
+        LeapTriggerLockState.markCompleted(LeapDungeonClass.HEALER)
+        assertTrue(LeapTriggerLockState.isSatisfied(step))
+        assertFalse(LeapTriggerLockState.isSatisfiedByLeap(step, LeapDungeonClass.TANK))
+        assertFalse(LeapTriggerLockState.isSatisfiedByLeap(step, null))
+        assertTrue(LeapTriggerLockState.isSatisfiedByLeap(step, LeapDungeonClass.HEALER))
+        assertTrue(LeapTriggerLockState.isSatisfiedByLeap(step.copy(requires = LeapDungeonClass.EMPTY), LeapDungeonClass.TANK))
+    }
+
+    @Test
     fun noRequirementPreservesImmediateBehavior() {
         val trigger = LeapOrientTrigger.create(LeapTriggerEvent.CLOCK, "healer")
         assertTrue(LeapTriggerLockState.isSatisfied(trigger))
@@ -37,5 +48,21 @@ class LeapTriggerLockStateTest {
         val trigger = LeapRoutePreset.rows(LeapStormRoute.PY)
             .first { it.id == "mage-py-35s-healer" }
         assertEquals(LeapDungeonClass.TANK, trigger.requiresTargetClass)
+    }
+
+    @Test
+    fun aPhaseChangeKeepsRowsParkedJustNowButDropsOldOnes() {
+        val trigger = LeapOrientTrigger.create(LeapTriggerEvent.CLOCK, "healer").copy(id = "p")
+        val fresh = LeapAutoStep.leapTarget().copy(requires = LeapDungeonClass.HEALER)
+        val old = LeapAutoStep.leapTarget().copy(requires = LeapDungeonClass.TANK)
+        LeapTriggerLockState.deferStep(DeferredLeapStep(trigger, fresh, "x", "m", atMs = 9_500))
+        LeapTriggerLockState.deferStep(DeferredLeapStep(trigger, old, "x", "m", atMs = 1_000))
+        LeapTriggerLockState.markCompleted(LeapDungeonClass.MAGE)
+
+        LeapTriggerLockState.resetForPhase(nowMs = 10_000)
+
+        assertEquals(1, LeapTriggerLockState.deferredCount())
+        assertEquals(1, LeapTriggerLockState.takeSteps(LeapDungeonClass.HEALER).size)
+        assertTrue(LeapTriggerLockState.completed().isEmpty())
     }
 }

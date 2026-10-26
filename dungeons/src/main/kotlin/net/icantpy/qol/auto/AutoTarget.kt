@@ -19,6 +19,11 @@ sealed interface AutoTarget {
         override val kind: AutoActionKind get() = AutoActionKind.SWITCH_LOADOUT
         override val key: String get() = "loadout:$number"
     }
+
+    data class Pet(val name: String) : AutoTarget {
+        override val kind: AutoActionKind get() = AutoActionKind.SWAP_PET
+        override val key: String get() = "pet:${name.lowercase()}"
+    }
 }
 
 /** A started multi-step routine. [tick] returns true once the routine has finished for any reason. */

@@ -6,6 +6,7 @@ import net.icantpy.dungeon.timer.AlertSounds
 import net.icantpy.location.SkyblockLocation
 import net.icantpy.qol.path.PathFinder
 import net.icantpy.qol.path.PathNode
+import net.icantpy.compat.McCompat
 import net.icantpy.qol.path.PathWalker
 import net.icantpy.qol.path.WalkSettings
 import net.icantpy.qol.path.WorldBlockGrid
@@ -65,6 +66,26 @@ object FirePit {
     private const val TRACKER_WINDOW_TICKS = 60
     private const val DEBUG_LINES_PER_SECOND = 40
     private const val DEBUG_STATE_LIMIT = 4000
+    private const val NO_PRIORITY = -1
+
+    /** The beam countdown shows from this many ticks out, so its action bar line competes with the pit line. */
+    private const val BEAM_NOTICE_TICKS = 10.0
+
+    private const val AIR_EXTRA_MARGIN = 0.15
+
+    /** The eight W/A/S/D directions the air strafe can add. */
+    private val AIR_COMBOS = listOf(
+        KeyCombo(forward = true, back = false, left = false, right = false),
+        KeyCombo(forward = true, back = false, left = false, right = true),
+        KeyCombo(forward = false, back = false, left = false, right = true),
+        KeyCombo(forward = false, back = true, left = false, right = true),
+        KeyCombo(forward = false, back = true, left = false, right = false),
+        KeyCombo(forward = false, back = true, left = true, right = false),
+        KeyCombo(forward = false, back = false, left = true, right = false),
+        KeyCombo(forward = true, back = false, left = true, right = false),
+    )
+    private const val AIR_FLOOR_SLACK = 0.5
+    private const val AIR_FLOOR_SCAN = 8
     private const val HAZARD_STROKE = 1.5f
     private const val ESCAPE_LINE_WIDTH = 2f
     private val HAZARD_OUTLINE: Int = 0xCCFF3030.toInt()
@@ -109,6 +130,28 @@ object FirePit {
     /** Columns showing a pit block in the latest scan, and those in a pit-sized group (see [PitShapes]). Reused per scan. */
     private val pitColumns = HashSet<Long>()
     private val plusColumns = HashSet<Long>()
+
+    /** Columns around Quazii's feet in the latest scan (see [QuaziiStand]); hazards like a pit. Reused per scan. */
+    private val quaziiZone = HashSet<Long>()
+
+    /** Pit blocks that count as a pit at the chosen [PitPhase]; [pitBlocks] still decides what is safe to stand on. */
+    private var detectBlocks: Set<Block> = emptySet()
+
+    /** Detection speed limits, one per hazard kind. [fireActive] is the fire that has passed its delay. */
+    private val pitDelay = DetectDelay()
+    private val fireDelay = DetectDelay()
+    private val fireActive = HashSet<Long>()
+    private val pitRaw = HashSet<Long>()
+
+    /** The hazard kinds behind [combinedHazards], kept apart so [priorityAt] can rank them. Reused per call. */
+    private val pitActive = HashSet<Long>()
+    private val fireZone = HashSet<Long>()
+
+    /** Pit colour (0 red, 1 yellow, 2 black) seen in each pit column in the latest scan. */
+    private val pitPhaseAt = HashMap<Long, Int>()
+
+    /** Priority of the strongest hazard under the player this tick, or [NO_PRIORITY] when in none. */
+    private var standingPriority = NO_PRIORITY
     private val blockIdCache = HashMap<Block, String>()
 
     /** Entity ids already logged by the debug entity log; reset with the rest of the state. */
@@ -137,6 +180,7 @@ object FirePit {
         stopEscapeWalk()
         resetState()
         pitBlocks = emptySet()
+        detectBlocks = emptySet()
     }
 
     /**
@@ -147,18 +191,25 @@ object FirePit {
     private val movementGuard = MovementHook.Provider { player, movement ->
         val p = player as? LocalPlayer ?: return@Provider null
         var move = movement as? Vec3 ?: return@Provider null
+        var changed = false
         val kept = QuaziiBeamDodge.keepOutMove(p, move)
-        if (kept != null) move = kept
+        if (kept != null) {
+            move = kept
+            changed = true
+        }
         val c = config
         if (!c.enabled || !c.hardAvoid || !hasState || fireBlocked.isEmpty() || (move.x == 0.0 && move.z == 0.0)) {
-            return@Provider kept
+            return@Provider if (changed) move else null
         }
         val box = p.boundingBox
         if (!HazardClip.clip(box.minX, box.minZ, box.maxX, box.maxZ, move.x, move.z, fireBlocked, clipOut)) {
-            return@Provider kept
+            return@Provider if (changed) move else null
         }
         Vec3(clipOut[0], move.y, clipOut[1])
     }
+
+    /** Movement keys AirSteerer is holding for the air strafe, so the next tick can keep or change the choice. */
+    private var airSteer: KeyCombo? = null
     private val clipOut = DoubleArray(2)
 
     /** Fire columns expanded by the fire avoid radius, rebuilt every scan; read by [movementGuard]. */
@@ -195,7 +246,8 @@ object FirePit {
         val c = config
         val mc = Minecraft.getInstance()
         // The beam dodge gates itself on a Quazii in view, so it runs with or without the pit helper.
-        QuaziiBeamDodge.tick(c, mc.level, mc.player, escaping = c.enabled && inside)
+        // Only a hazard that outranks the beam holds the beam helper back (no jump, no countdown line).
+        QuaziiBeamDodge.tick(c, mc.level, mc.player, escaping = c.enabled && inside && standingPriority > c.priorityBeam)
         if (!c.enabled) return
         val level = mc.level
         val player = mc.player
@@ -214,8 +266,12 @@ object FirePit {
         }
         val hazards = combinedHazards()
         hazardsNow = hazards
+        val steerFree = !EscapeWalker.active && !PathWalker.active && McCompat.currentScreen(mc) == null
+        airSteer = if (c.airAvoid && steerFree && hazards.isNotEmpty()) planAirSteer(level, player, hazards, c) else null
+        AirSteerer.hold(airSteer)
         val inHazard = hazards.isNotEmpty() &&
             FirePitEscape.isInside(player.x, player.z, hazards, c.margin.toDouble())
+        standingPriority = if (inHazard) priorityAt(player.x, player.z, c.margin.toDouble(), c) else NO_PRIORITY
         if (inHazard) {
             if (scanned) escape = solveEscape(level, player, hazards, c)
             enterHazard(c, player)
@@ -249,6 +305,12 @@ object FirePit {
         val guardQuazii = next.beamDodge != BeamDodge.OFF && next.avoidQuaziiBody
         MovementHook.install(if (guardFire || guardQuazii) movementGuard else null)
         pitBlocks = resolvePitBlocks(next.pitBlocks)
+        val skipped = resolvePitBlocks(next.pitPhase.earlier)
+        detectBlocks = pitBlocks.filterTo(HashSet()) { it !in skipped && it !in FIRE_BLOCKS }
+        if (!next.airAvoid) {
+            airSteer = null
+            AirSteerer.release()
+        }
         if (!next.debugLog) lastStates.clear()
         if (next.mode != EscapeMode.WALK) stopEscapeWalk()
         if (!next.enabled) {
@@ -291,6 +353,17 @@ object FirePit {
         currentHazards.clear()
         pitColumns.clear()
         plusColumns.clear()
+        quaziiZone.clear()
+        fireActive.clear()
+        pitRaw.clear()
+        pitActive.clear()
+        fireZone.clear()
+        pitPhaseAt.clear()
+        standingPriority = NO_PRIORITY
+        pitDelay.clear()
+        fireDelay.clear()
+        airSteer = null
+        AirSteerer.release()
         lastStates.clear()
         seenEntities.clear()
         guardianTargets.clear()
@@ -322,12 +395,22 @@ object FirePit {
     /** Pits seen forming (tracker), pit-sized groups however they appeared, and any column with fire right now. */
     private fun combinedHazards(): Set<Long> {
         val tracked = tracker.hazards(ticks)
-        if (fireColumns.isEmpty() && plusColumns.isEmpty()) return tracked
-        currentHazards.clear()
-        currentHazards.addAll(tracked)
-        currentHazards.addAll(plusColumns)
+        pitActive.clear()
+        fireZone.clear()
+        if (tracked.isEmpty() && plusColumns.isEmpty() && fireActive.isEmpty() && quaziiZone.isEmpty()) {
+            pitDelay.clear()
+            return tracked
+        }
+        pitRaw.clear()
+        pitRaw.addAll(tracked)
+        pitRaw.addAll(plusColumns)
+        pitDelay.filter(pitRaw, ticks, DetectDelay.ticksOf(config.pitDelayMs), pitActive)
         // Fire keeps the configured berth: columns within fireRadius of a fire block count as fire too.
-        PitShapes.expand(fireColumns, config.fireRadius, currentHazards)
+        PitShapes.expand(fireActive, config.fireRadius, fireZone)
+        currentHazards.clear()
+        currentHazards.addAll(pitActive)
+        currentHazards.addAll(quaziiZone)
+        currentHazards.addAll(fireZone)
         return currentHazards
     }
 
@@ -335,6 +418,7 @@ object FirePit {
         fireColumns.clear()
         pitColumns.clear()
         plusColumns.clear()
+        pitPhaseAt.clear()
         val origin = player.blockPosition()
         val radius = c.scanRadius
         for (dx in -radius..radius) {
@@ -343,8 +427,13 @@ object FirePit {
             }
         }
         PitShapes.pitGroups(pitColumns, plusColumns)
+        if (c.quaziiStand) QuaziiStand.zone(level, player, c.quaziiStandRadius, quaziiZone) else quaziiZone.clear()
+        if (c.avoidMobs) AvoidMobs.addZone(level, player, AvoidMobs.parse(c.avoidMobNames), c.avoidMobRadius, quaziiZone)
+        if (c.avoidPillars) AvoidMobs.addPillars(level, player, c.pillarRadius, quaziiZone)
+        fireActive.clear()
+        fireDelay.filter(fireColumns, ticks, DetectDelay.ticksOf(c.fireDelayMs), fireActive)
         fireBlocked.clear()
-        PitShapes.expand(fireColumns, c.fireRadius, fireBlocked)
+        PitShapes.expand(fireActive, c.fireRadius, fireBlocked)
         tracker.prune(ticks)
         hasState = true
     }
@@ -359,15 +448,80 @@ object FirePit {
         for (y in feetY + SCAN_ABOVE downTo feetY - SCAN_BELOW) {
             val pos = BlockPos(x, y, z)
             val state = level.getBlockState(pos)
-            if (!pit && isPit(state)) {
+            if (!pit && state.block in detectBlocks) {
                 pit = true
                 pitFloorY = y
+                pitPhaseAt[packXZ(x, z)] = phaseOf(state.block)
             }
             if (state.block in FIRE_BLOCKS) fireColumns.add(packXZ(x, z))
             if (debug) logStateChange(pos, state)
         }
         if (pit) pitColumns.add(packXZ(x, z))
         tracker.observe(ticks, x, z, pit)
+    }
+
+    /**
+     * While airborne, predicts the landing column (see [AirLanding]). When it is a hazard, picks the W/A/S/D keys,
+     * out of the eight directions held on top of the keys the player is already pressing, whose air acceleration
+     * moves the landing out of every hazard, preferring the smallest shift. The current choice is kept while it still
+     * works, and released once the landing is safe without it, so the keys do not flicker. Null when on the ground,
+     * landing safely, or no key helps. Input only: no packets and no camera change.
+     */
+    private fun planAirSteer(
+        level: ClientLevel,
+        player: LocalPlayer,
+        hazards: Set<Long>,
+        c: FirePitConfig,
+    ): KeyCombo? {
+        if (player.onGround() || player.isInWater || player.isFallFlying || player.isSpectator) return null
+        val v = player.deltaMovement
+        val floorTop = { x: Int, z: Int, y: Double -> floorTop(level, x, z, y) }
+        val held = AirSteerer.physical()
+        val speed = if (player.isSprinting) AirLanding.AIR_SPEED_SPRINT else AirLanding.AIR_SPEED
+        val yaw = player.yRot.toDouble()
+        fun landing(extra: KeyCombo?): AirLanding.Landing? {
+            val k = if (extra == null) held else KeyCombo(
+                held.forward || extra.forward,
+                held.back || extra.back,
+                held.left || extra.left,
+                held.right || extra.right,
+            )
+            val a = AirLanding.inputAccel(k.forward, k.back, k.left, k.right, yaw, speed)
+            return AirLanding.predict(player.x, player.y, player.z, v.x, v.y, v.z, a.x, a.z, floorTop)
+        }
+        val margin = c.margin.toDouble()
+        fun safe(land: AirLanding.Landing?, extraMargin: Double) =
+            land != null && !FirePitEscape.isInside(land.x, land.z, hazards, margin + extraMargin)
+        val base = landing(null) ?: return null
+        val current = airSteer
+        if (current == null) {
+            if (!FirePitEscape.isInside(base.x, base.z, hazards, margin)) return null
+        } else {
+            if (safe(base, AIR_EXTRA_MARGIN)) return null
+            if (safe(landing(current), AIR_EXTRA_MARGIN)) return current
+        }
+        var best: KeyCombo? = null
+        var bestShift = Double.MAX_VALUE
+        for (combo in AIR_COMBOS) {
+            val land = landing(combo)
+            if (!safe(land, AIR_EXTRA_MARGIN) || land == null) continue
+            val shift = (land.x - base.x) * (land.x - base.x) + (land.z - base.z) * (land.z - base.z)
+            if (shift < bestShift) {
+                bestShift = shift
+                best = combo
+            }
+        }
+        return best
+    }
+
+    /** Top of the highest solid block at or just under [fromY] in the column, or NaN when none within the scan. */
+    private fun floorTop(level: ClientLevel, x: Int, z: Int, fromY: Double): Double {
+        val top = floor(fromY + AIR_FLOOR_SLACK).toInt()
+        for (y in top downTo top - AIR_FLOOR_SCAN) {
+            val pos = BlockPos(x, y, z)
+            if (!level.getBlockState(pos).getCollisionShape(level, pos).isEmpty()) return y + 1.0
+        }
+        return Double.NaN
     }
 
     private fun solveEscape(
@@ -383,6 +537,9 @@ object FirePit {
             hazards,
             c.margin.toDouble(),
             c.maxEscapeDistance.toDouble(),
+            // Never cross a pit that outranks what the player stands in to dodge something milder: from a gap
+            // between pits, staying put beats walking into the next pit.
+            blocked = { key -> columnPriority(key, c) > standingPriority },
         ) { x, z -> isStandable(level, x, feetY, z) }
     }
 
@@ -413,7 +570,15 @@ object FirePit {
             inside = true
             if (c.sound) AlertSounds.play("pling")
         }
-        val found = escape ?: return
+        val found = escape
+        if (found == null) {
+            // Every way out crosses something worse than where the player stands: hold still.
+            if (walkStarted) {
+                stopEscapeWalk()
+                walkStarted = false
+            }
+            return
+        }
         if (ticks >= nextNotifyTick) {
             nextNotifyTick = ticks + NOTIFY_INTERVAL_TICKS
             notify(player, found)
@@ -464,8 +629,34 @@ object FirePit {
         walkStarted = PathWalker.active
     }
 
+    /** Strongest configured priority among the hazard columns the player's footprint (point inflated by [margin]) touches. */
+    private fun priorityAt(px: Double, pz: Double, margin: Double, c: FirePitConfig): Int {
+        var best = NO_PRIORITY
+        for (x in floor(px - margin).toInt()..floor(px + margin).toInt()) {
+            for (z in floor(pz - margin).toInt()..floor(pz + margin).toInt()) {
+                best = maxOf(best, columnPriority(packXZ(x, z), c))
+            }
+        }
+        return best
+    }
+
+    private fun columnPriority(key: Long, c: FirePitConfig): Int {
+        var best = NO_PRIORITY
+        if (key in pitActive) best = maxOf(best, c.pitPriority(pitPhaseAt[key] ?: 0))
+        if (key in fireZone) best = maxOf(best, c.priorityFire)
+        if (key in quaziiZone) best = maxOf(best, c.priorityQuaziiZone)
+        return best
+    }
+
+    private fun phaseOf(block: Block): Int = when (blockId(block)) {
+        "minecraft:yellow_terracotta" -> 1
+        "minecraft:black_terracotta" -> 2
+        else -> 0
+    }
+
     private fun leaveHazard() {
         inside = false
+        standingPriority = NO_PRIORITY
         walkStarted = false
         escape = null
         stopEscapeWalk()
@@ -474,6 +665,7 @@ object FirePit {
     /** Stops whichever escape walk is running. Never stops a walk someone else started (e.g. /icantpy goto). */
     private fun stopEscapeWalk() {
         EscapeWalker.stop()
+        AirSteerer.release()
         if (ownsPathWalk) {
             escapeWalkId++
             ownsPathWalk = false
@@ -486,8 +678,13 @@ object FirePit {
     private fun notify(player: LocalPlayer, found: FirePitEscape.Escape) {
         val direction = FirePitEscape.relativeDirection(player.yRot, found.bearingDeg)
         val distance = String.format(Locale.ROOT, "%.1f", found.distance)
+        // The beam countdown shares the action bar; when the beam outranks what you stand in, it keeps the line.
+        val beam = QuaziiBeamDodge.threatImpact
+        if (!beam.isNaN() && beam in 0.0..BEAM_NOTICE_TICKS && config.priorityBeam > standingPriority) return
+        val atQuazii = FirePitEscape.isInside(player.x, player.z, quaziiZone, config.margin.toDouble())
+        val what = if (atQuazii) "Too close to a boss!" else "Fire pit!"
         player.sendOverlayMessage(
-            Component.literal("Fire pit! Move ${direction.arrow} ${direction.label} $distance blocks"),
+            Component.literal("$what Move ${direction.arrow} ${direction.label} $distance blocks"),
         )
     }
 

@@ -41,6 +41,8 @@ class LeapMarkRowsTest {
         assertEquals(
             listOf(
                 LeapCardRow.STEP,
+                LeapCardRow.STEP_BRANCH,
+                LeapCardRow.STEP_REQUIRES,
                 LeapCardRow.MARK_BY,
                 LeapCardRow.MARK_TARGET_CLASS,
                 LeapCardRow.MARK_STYLE,
@@ -67,7 +69,7 @@ class LeapMarkRowsTest {
             .filter { it.step == 1 && it.row != LeapCardRow.STEP }
         assertTrue(slots.isNotEmpty())
         assertTrue(slots.all { it.indented })
-        assertEquals(LeapCardRow.MARK_BY, slots.first().row)
+        assertEquals(LeapCardRow.MARK_BY, slots.first { it.row.name.startsWith("MARK_") }.row)
     }
 
     @Test

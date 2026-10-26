@@ -39,7 +39,7 @@ import kotlin.math.ceil
  * afterwards, and movement is only changed on the client like a wall would.
  */
 object QuaziiBeamDodge {
-    private const val TAG = "ⓆⓊⒶⓏⒾⒾ"
+    internal const val TAG = "ⓆⓊⒶⓏⒾⒾ"
     private const val BODY_RANGE = 16.0
     private const val TAG_HORIZONTAL_RANGE = 2.5
     private const val TAG_BELOW_FEET = 0.5
@@ -217,7 +217,8 @@ object QuaziiBeamDodge {
         }
         ticks++
         val soonest = observeBodies(config, level, player, mc, escaping)
-        if (soonest != null && soonest >= 0.0 && soonest <= WARN_TICKS) {
+        // A hazard that outranks the beam owns the action bar (and the jump); see FirePitConfig.priorityBeam.
+        if (!escaping && soonest != null && soonest >= 0.0 && soonest <= WARN_TICKS) {
             player.sendOverlayMessage(Component.literal("Quazii beam in ${ceil(soonest).toInt()}"))
         }
     }
@@ -495,7 +496,7 @@ object QuaziiBeamDodge {
     }
 
     /** The name tag sits from a little below the feet to a few blocks over the head, nearly over the body. */
-    private fun tagAbove(stand: ArmorStand, body: WitherSkeleton): Boolean {
+    internal fun tagAbove(stand: ArmorStand, body: WitherSkeleton): Boolean {
         val rise = stand.y - body.y
         if (rise < -TAG_BELOW_FEET || rise > body.bbHeight + TAG_ABOVE_HEAD) return false
         return QuaziiBeam.horizontalDistance(stand.x, stand.z, body.x, body.z) <= TAG_HORIZONTAL_RANGE

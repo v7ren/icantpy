@@ -68,7 +68,7 @@ internal class SplitsPage {
         if (record != null) {
             val armed = pendingResetFloor == floor
             val label = if (armed) "Confirm" else "Reset PB"
-            draw.button(label, m.rightX(88), y + (cardHeight - 22) / 2, if (armed) ButtonStyle.PRIMARY else ButtonStyle.GHOST) {
+            draw.button(label, m.rightX(RESET_BUTTON_WIDTH), y + (cardHeight - 22) / 2, if (armed) ButtonStyle.PRIMARY else ButtonStyle.GHOST) {
                 onResetClicked(floor, toast)
             }
         }
@@ -88,8 +88,19 @@ internal class SplitsPage {
 
     private data class Columns(val floor: Int, val pb: Int, val sum: Int, val runs: Int)
 
+    /**
+     * Column starts. The Reset PB button owns the right edge, so the four columns must end before it: wide windows keep
+     * the roomy spacing, narrower ones use a tighter set, and the last column never starts past the button.
+     */
     private fun columnsOf(m: ConfigMetrics): Columns {
         val left = m.innerLeft + 18
-        return Columns(floor = left, pb = left + 70, sum = left + 180, runs = left + 300)
+        val usable = m.rightX(RESET_BUTTON_WIDTH) - 12 - left
+        val offsets = if (usable >= 330) listOf(0, 70, 180, 300) else listOf(0, 48, 128, 208)
+        val runs = offsets[3].coerceAtMost((usable - 24).coerceAtLeast(offsets[2] + 40))
+        return Columns(floor = left, pb = left + offsets[1], sum = left + offsets[2], runs = left + runs)
+    }
+
+    private companion object {
+        const val RESET_BUTTON_WIDTH = 88
     }
 }

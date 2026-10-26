@@ -8,6 +8,7 @@ internal enum class AetherModuleId {
     SPLITS,
     SCORE,
     DRAGONS,
+    TERMINALS,
     LEAP,
     RENAME,
     MORPH,
@@ -26,6 +27,8 @@ internal enum class AetherModuleId {
     VISUALS,
     FIRE_PITS,
     BOSS_AIM,
+    BLOOD_HELPER,
+    LIVID_HELPER,
 }
 
 /** Display name, search hint and default enable state for a feature. */
@@ -44,6 +47,7 @@ internal object AetherModules {
         AetherModule(AetherModuleId.SPLITS, "Splits & PBs", "Run splits, personal bests & sum of best", true),
         AetherModule(AetherModuleId.SCORE, "Score", "Live score estimate & 270/300 alerts", true),
         AetherModule(AetherModuleId.DRAGONS, "Wither Dragons", "Spawn priority, timers & dragon kill tracking in P5", true),
+        AetherModule(AetherModuleId.TERMINALS, "Terminal Solver", "Solver panel for P3 terminals with custom colours & layout", true),
         AetherModule(AetherModuleId.LEAP, "Spirit Leap", "Smart routes, targeted cards & auto-leap", true),
         AetherModule(AetherModuleId.RENAME, "Item Customize", "Custom item tags, glints, dyes & lore", true),
         AetherModule(AetherModuleId.MORPH, "Morph Engine", "Client-side player model overrides", false),
@@ -62,8 +66,10 @@ internal object AetherModules {
         AetherModule(AetherModuleId.CLICK_GUI, "Click GUI", "Custom window theme, blur & responsive scaling", true),
         AetherModule(AetherModuleId.HUD_EDIT, "GUI Layout", "Edit every HUD widget, overlay, and on-screen card", true),
         AetherModule(AetherModuleId.PERFORMANCE, "Performance", "Motion blur and a max-FPS video preset", true),
-        AetherModule(AetherModuleId.FIRE_PITS, "Blaze Fire Pits", "Warns or walks you out of Inferno Demonlord fire pits", false),
-        AetherModule(AetherModuleId.BOSS_AIM, "Boss Aim", "Smoothly turns your camera toward your own slayer boss", false),
+        AetherModule(AetherModuleId.FIRE_PITS, "Blaze", "Avoids fire pits, Quazii and Typhoeus in the Inferno Demonlord fight", false),
+        AetherModule(AetherModuleId.BOSS_AIM, "Aim Assist", "Smoothly turns your camera toward your own slayer boss", false),
+        AetherModule(AetherModuleId.BLOOD_HELPER, "Blood Helper", "Aims at the box where each blood mob is predicted to drop", false),
+        AetherModule(AetherModuleId.LIVID_HELPER, "Livid Helper", "Aims at the real Livid in F5 and M5", false),
         AetherModule(AetherModuleId.VISUALS, "Visuals", "Viewmodel, zoom, perspective, fullbright, fog, time & render cleanup", false),
     )
 

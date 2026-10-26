@@ -197,10 +197,12 @@ object LeapMenu {
         )
     }
 
-    fun centerPlayer(teammates: List<LeapPlayer>): LeapPlayer? {
+    /** The center slot's player. With [liveOnly], only a lock armed right now counts, not the held fallback. */
+    fun centerPlayer(teammates: List<LeapPlayer>, liveOnly: Boolean = false): LeapPlayer? {
         val cfg = settings()
         if (!cfg.orientEnabled) return null
-        val pending = LeapOrientTargets.pick(LeapGameState.currentId(), cfg) ?: return null
+        val pending = (if (liveOnly) LeapOrientTargets.pickLive(LeapGameState.currentId(), cfg) else LeapOrientTargets.pick(LeapGameState.currentId(), cfg))
+            ?: return null
         val roster = teammates + LeapRoster.knownPlayers()
         val player = LeapRoster.resolveTarget(pending, roster, cfg) ?: return null
         if (LeapRoster.isSelf(player.name)) return null
@@ -266,7 +268,7 @@ object LeapMenu {
         return leapHeadSlots(menu).mapNotNull { slot ->
             val name = headName(slot.item.hoverName.string) ?: return@mapNotNull null
             odin.firstOrNull { it.name.equals(name, ignoreCase = true) }
-                ?: LeapPlayer(name, LeapDungeonClass.MAGE)
+                ?: LeapPlayer(name, LeapRoster.classOf(name, settings()).takeIf { it.isReal() } ?: LeapDungeonClass.MAGE)
         }
     }
 

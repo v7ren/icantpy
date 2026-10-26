@@ -72,6 +72,7 @@ object LeapTriggerCards {
                     floor = template.floor,
                     phase = template.phase,
                     section = template.section,
+                    bossOnly = template.bossOnly,
                     route = template.route,
                     ee2Owner = template.ee2Owner,
                     clock = template.clock,

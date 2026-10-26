@@ -443,6 +443,14 @@ abstract class AutoMenuRun(
         /** Longest wait for a command-opened menu, or for a page turn to show, before giving up. */
         const val RESPONSE_TIMEOUT_MS = 3_000L
 
+        /**
+         * Wait for the menu to open. A singleplayer test world has no /loadout, /pets or /stats, so the menu is a chest
+         * the player opens by hand; give them time to do it.
+         */
+        const val LOCAL_OPEN_WAIT_MS = 20_000L
+
+        fun openWaitMs(): Long = if (Minecraft.getInstance().hasSingleplayerServer()) LOCAL_OPEN_WAIT_MS else RESPONSE_TIMEOUT_MS
+
         /** Abort reason when the player closes the menu before our first click. */
         const val CLOSED_MESSAGE = "the menu was closed"
 

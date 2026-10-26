@@ -8,6 +8,7 @@ import net.icantpy.qol.invsort.InvSortLayout.GuiRect
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.Screen
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
 import org.lwjgl.glfw.GLFW
@@ -24,6 +25,7 @@ object InvSortButton {
     private const val HOVER_BORDER_COLOR = 0xFFFFFFFF.toInt()
     private const val RUNNING_BORDER_COLOR = 0xFF55FF55.toInt()
     private const val TEXT_COLOR = 0xFFFFFFFF.toInt()
+    private const val SLOT_SIZE = 16
     private const val SAVE_LABEL = "+"
     private const val SAVE_TOOLTIP = "Save current layout as a preset"
     private const val TOOLTIP_SEPARATOR = " · "
@@ -34,7 +36,7 @@ object InvSortButton {
     private class Laid(val column: ButtonColumn, val labels: List<String>)
 
     fun render(screen: Screen, graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        if (!isVisibleOn(screen)) return
+        if (!isVisibleOn(screen) || itemTooltipShowing(screen, mouseX, mouseY)) return
         val laid = layoutFor(screen)
         val presets = InvSortController.settings.presets
         val runningIndex = InvSortRunner.runningPresetIndex
@@ -69,6 +71,20 @@ object InvSortButton {
                 true
             }
             else -> false
+        }
+    }
+
+    /**
+     * An item tooltip under the cursor outranks these buttons: they are not drawn (so they cannot paint over or
+     * replace the tooltip) while the cursor rests on a slot holding an item.
+     */
+    private fun itemTooltipShowing(screen: Screen, mouseX: Int, mouseY: Int): Boolean {
+        val container = screen as? AbstractContainerScreen<*> ?: return false
+        val origin = InvSortLayout.origin(screen)
+        return container.menu.slots.any { slot ->
+            val x = origin.left + slot.x
+            val y = origin.top + slot.y
+            slot.hasItem() && mouseX >= x && mouseX < x + SLOT_SIZE && mouseY >= y && mouseY < y + SLOT_SIZE
         }
     }
 

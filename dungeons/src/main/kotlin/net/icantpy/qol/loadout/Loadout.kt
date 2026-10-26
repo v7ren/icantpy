@@ -28,6 +28,9 @@ object Loadout {
     /** Equipped loadout as last seen in chat or on an icon's lore; reset on disconnect. */
     private val memory = LoadoutMemory()
 
+    /** The loadout number last seen equipped, or null when unknown. Read by Spirit Leap conditions. */
+    fun equippedNumber(): Int? = memory.equipped
+
     /** Last Loadouts page title seen (stripped), used to number icons on the page the screen shows. */
     private var lastTitle: String? = null
 

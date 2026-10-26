@@ -2,7 +2,9 @@ package net.icantpy.gui.config
 
 import net.icantpy.dungeon.leap.LeapAutoKind
 import net.icantpy.dungeon.leap.LeapAutoStep
+import net.icantpy.dungeon.leap.LeapBranch
 import net.icantpy.dungeon.leap.LeapCenterTarget
+import net.icantpy.dungeon.leap.LeapConditions
 
 /** Integer screen rectangle used by the leap trigger card layout. */
 internal data class LayoutRect(val x: Int, val y: Int, val w: Int, val h: Int) {
@@ -44,6 +46,7 @@ internal enum class LeapCardRow(val label: String) {
     FLOOR("Floor"),
     ROUTE("Route"),
     SECTION("Section"),
+    BOSS_ONLY("Boss fight"),
     TARGET_NAME("Target"),
     TARGET_INFO("Target"),
     PLAYER("Player"),
@@ -82,13 +85,23 @@ internal enum class LeapCardRow(val label: String) {
     MARK_PLAYER_GLOW("Player glow (like spectral arrow)"),
     MARK_MARKER_GLOW("Marker glow"),
     MARK_THROUGH("Through walls"),
+    STEP_BRANCH("Run"),
+    STEP_COND("If"),
+    STEP_COND_ADD(""),
+    STEP_REQUIRES("Requires"),
 }
 
 /**
  * A row in the card. [step] is the zero-based action index for [LeapCardRow.STEP] and [LeapCardRow.ADD_STEP].
  * [indented] marks the leap settings shown under the leap-target action row.
  */
-internal data class LeapCardSlot(val row: LeapCardRow, val step: Int = 0, val indented: Boolean = false)
+internal data class LeapCardSlot(
+    val row: LeapCardRow,
+    val step: Int = 0,
+    val indented: Boolean = false,
+    /** Zero-based condition term for [LeapCardRow.STEP_COND]. */
+    val term: Int = 0,
+)
 
 /**
  * Which optional rows a trigger shows. Derived from trigger state only, never from layout.
@@ -126,6 +139,10 @@ internal data class LeapCardShape(
     val markPlayerSteps: Set<Int> = emptySet(),
     /** Indexes of MARK_PLAYER steps whose style is Arrow; only those show the shape, spin and bob rows. */
     val markArrowSteps: Set<Int> = emptySet(),
+    /** Branch role by index into [stepKinds]. A missing index means [LeapBranch.ALWAYS]. */
+    val stepBranches: Map<Int, LeapBranch> = emptyMap(),
+    /** Number of condition terms by index into [stepKinds]. Only branches with a condition show them. */
+    val stepTermCounts: Map<Int, Int> = emptyMap(),
 ) {
     val armLeap: Boolean get() = LeapAutoKind.LEAP_TARGET in stepKinds
 }
@@ -148,6 +165,15 @@ internal data class StepControls(
     val value: LayoutRect,
     val up: LayoutRect,
     val down: LayoutRect,
+    val remove: LayoutRect,
+)
+
+/** Controls of one condition row. [join] is null on the first term. */
+internal data class CondControls(
+    val join: LayoutRect?,
+    val not: LayoutRect,
+    val fact: LayoutRect,
+    val value: LayoutRect,
     val remove: LayoutRect,
 )
 
@@ -189,6 +215,9 @@ internal object LeapTriggerLayout {
     /** Share of the control width given to the kind picker; the value picker takes the rest. */
     const val STEP_KIND_PERCENT = 40
 
+    /** Room kept for the "12." step number at the start of an action row; the pickers use the rest of the label column. */
+    const val STEP_NUMBER_WIDTH = 28
+
     /**
      * Rows shown for an expanded card, in order: event filters first, then the action list. The leap
      * settings sit indented under the leap-target action row, so they appear only while one exists.
@@ -200,7 +229,7 @@ internal object LeapTriggerLayout {
         if (shape.namedMatch) add(slot(LeapCardRow.PLAYER))
         if (shape.colorMatch) add(slot(LeapCardRow.COLOR))
         if (shape.valueMatch) add(slot(LeapCardRow.VALUE))
-        listOf(LeapCardRow.PHASE, LeapCardRow.FLOOR, LeapCardRow.ROUTE, LeapCardRow.SECTION).forEach { add(slot(it)) }
+        listOf(LeapCardRow.PHASE, LeapCardRow.FLOOR, LeapCardRow.ROUTE, LeapCardRow.SECTION, LeapCardRow.BOSS_ONLY).forEach { add(slot(it)) }
         addAll(actionRows(shape))
     }
 
@@ -209,15 +238,33 @@ internal object LeapTriggerLayout {
         val kinds = shape.stepKinds.take(LeapAutoStep.MAX_STEPS)
         val rows = kinds.flatMapIndexed { index, kind ->
             val stepRow = LeapCardSlot(LeapCardRow.STEP, index)
+            val common = branchRows(shape, index, kind)
             when (kind) {
-                LeapAutoKind.LEAP_TARGET -> listOf(stepRow) + leapSettingRows(shape).map { it.copy(indented = true) }
-                LeapAutoKind.FOLLOWUP_LEAP -> listOf(stepRow) + followUpSettingRows(shape, index)
-                LeapAutoKind.SORT_INVENTORY -> listOf(stepRow) + sortSettingRows(shape, index)
-                LeapAutoKind.MARK_PLAYER -> listOf(stepRow) + markSettingRows(shape, index)
-                else -> listOf(stepRow)
+                LeapAutoKind.LEAP_TARGET -> listOf(stepRow) + common + leapSettingRows(shape).map { it.copy(indented = true) }
+                LeapAutoKind.FOLLOWUP_LEAP -> listOf(stepRow) + common + followUpSettingRows(shape, index)
+                LeapAutoKind.SORT_INVENTORY -> listOf(stepRow) + common + sortSettingRows(shape, index)
+                LeapAutoKind.MARK_PLAYER -> listOf(stepRow) + common + markSettingRows(shape, index)
+                else -> listOf(stepRow) + common
             }
         }
         return if (kinds.size < LeapAutoStep.MAX_STEPS) rows + LeapCardSlot(LeapCardRow.ADD_STEP, kinds.size) else rows
+    }
+
+    /**
+     * Indented rows every action has: its branch role, one row per condition term while the role carries a condition
+     * (plus an add row while there is room), and the leap requirement for rows that can wait on a leap.
+     */
+    private fun branchRows(shape: LeapCardShape, step: Int, kind: LeapAutoKind): List<LeapCardSlot> = buildList {
+        add(LeapCardSlot(LeapCardRow.STEP_BRANCH, step, indented = true))
+        val branch = shape.stepBranches[step] ?: LeapBranch.ALWAYS
+        if (branch.hasCondition) {
+            val terms = (shape.stepTermCounts[step] ?: 0).coerceIn(0, LeapConditions.MAX_TERMS)
+            for (term in 0 until terms) add(LeapCardSlot(LeapCardRow.STEP_COND, step, indented = true, term = term))
+            if (terms < LeapConditions.MAX_TERMS) add(LeapCardSlot(LeapCardRow.STEP_COND_ADD, step, indented = true))
+        }
+        if (kind != LeapAutoKind.LEAP_TARGET && kind != LeapAutoKind.FOLLOWUP_LEAP) {
+            add(LeapCardSlot(LeapCardRow.STEP_REQUIRES, step, indented = true))
+        }
     }
 
     /**
@@ -352,6 +399,32 @@ internal object LeapTriggerLayout {
         val value = LayoutRect(valueX, control.y, (up.x - STEP_BUTTON_GAP - valueX).coerceAtLeast(0), control.h)
         return StepControls(kind = kind, value = value, up = up, down = down, remove = remove)
     }
+
+    /** Width of the And / Or button and of the is / NOT button at the start of a condition row. */
+    const val COND_BUTTON_WIDTH = 44
+
+    /** Splits a condition row's control area into join, NOT, fact picker, value picker and a remove button. */
+    fun condControls(control: LayoutRect, hasJoin: Boolean): CondControls {
+        val size = STEP_BUTTON_SIZE
+        val top = control.y + (control.h - size) / 2
+        val remove = LayoutRect(control.right - size, top, size, size)
+        var x = control.x
+        val join = if (hasJoin) {
+            LayoutRect(x, control.y, COND_BUTTON_WIDTH, control.h).also { x = it.right + STEP_BUTTON_GAP }
+        } else {
+            null
+        }
+        val not = LayoutRect(x, control.y, COND_BUTTON_WIDTH, control.h)
+        x = not.right + STEP_BUTTON_GAP
+        val room = (remove.x - STEP_BUTTON_GAP - x).coerceAtLeast(0)
+        val fact = LayoutRect(x, control.y, room * COND_FACT_PERCENT / 100, control.h)
+        val valueX = fact.right + STEP_BUTTON_GAP
+        val value = LayoutRect(valueX, control.y, (remove.x - STEP_BUTTON_GAP - valueX).coerceAtLeast(0), control.h)
+        return CondControls(join = join, not = not, fact = fact, value = value, remove = remove)
+    }
+
+    /** Share of the room left after the buttons that goes to the fact picker; the value picker takes the rest. */
+    const val COND_FACT_PERCENT = 55
 
     /**
      * Header row: chevron, title, enable toggle, then the optional Off and Test buttons and Delete,

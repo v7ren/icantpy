@@ -9,20 +9,21 @@ class ConfigTabTest {
     @Test
     fun sidebarGroupsFollowTheInformationArchitecture() {
         assertEquals(
-            listOf("Home", "Dungeons", "Cosmetics", "Quality of life", "Slayer", "Interface"),
+            listOf("Home", "Dungeons", "Bosses", "Slayer", "Items & Cosmetics", "Utility", "Interface"),
             ConfigSection.entries.map { it.label },
         )
         assertEquals(listOf("Overview"), pageTitles(ConfigSection.HOME))
         assertEquals(
-            listOf("Clocks", "Alerts", "Splits & PBs", "Score", "Wither Dragons", "Spirit Leap"),
+            listOf("Clocks", "Alerts", "Splits & PBs", "Score", "Wither Dragons", "Terminals", "Spirit Leap", "Blood Helper"),
             pageTitles(ConfigSection.DUNGEONS),
         )
+        assertEquals(listOf("Livid Helper"), pageTitles(ConfigSection.BOSSES))
         assertEquals(listOf("Item Customize", "Morph", "Visuals"), pageTitles(ConfigSection.COSMETICS))
         assertEquals(
             listOf("Freelook", "Waypoints", "Stats & Loadouts", "Attribute Shards", "Inventory Sort", "Drop Ult", "Performance"),
             pageTitles(ConfigSection.QOL),
         )
-        assertEquals(listOf("Carry Counter", "Fire Pits", "Boss Aim"), pageTitles(ConfigSection.SLAYER))
+        assertEquals(listOf("Carry Counter", "Blaze", "Aim Assist"), pageTitles(ConfigSection.SLAYER))
         assertEquals(listOf("Appearance", "HUD Layout"), pageTitles(ConfigSection.INTERFACE))
     }
 
@@ -39,6 +40,7 @@ class ConfigTabTest {
         assertEquals(listOf("Display", "Dungeon", "Mechanics", "Debug"), ConfigPage.CLOCKS.subtabs)
         assertEquals(listOf("Customize", "Sharing"), ConfigPage.ITEMS.subtabs)
         assertEquals(listOf("Counter", "Keys", "Players"), ConfigPage.CARRIES.subtabs)
+        assertEquals(listOf("Avoid fire", "Avoid Quazii", "Avoid Typhoeus"), ConfigPage.FIRE_PITS.subtabs)
         assertEquals(listOf("Theme", "Text & shape", "Advanced"), ConfigPage.APPEARANCE.subtabs)
         assertEquals(listOf("Cleanup", "World", "Camera", "Viewmodel", "Hand", "Effects", "Model"), ConfigPage.VISUALS.subtabs)
     }
@@ -46,7 +48,7 @@ class ConfigTabTest {
     @Test
     fun onlyTheSplitPagesHaveSubtabsAndOnlyHudLayoutLeavesThePanel() {
         assertEquals(
-            setOf(ConfigPage.LEAP, ConfigPage.CLOCKS, ConfigPage.ITEMS, ConfigPage.CARRIES, ConfigPage.APPEARANCE, ConfigPage.VISUALS),
+            setOf(ConfigPage.LEAP, ConfigPage.CLOCKS, ConfigPage.ITEMS, ConfigPage.CARRIES, ConfigPage.APPEARANCE, ConfigPage.VISUALS, ConfigPage.FIRE_PITS),
             ConfigPage.entries.filter { it.subtabs.isNotEmpty() }.toSet(),
         )
         assertEquals(listOf(ConfigPage.HUD_LAYOUT), ConfigPage.entries.filter { it.opensHudEditor })

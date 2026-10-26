@@ -53,6 +53,12 @@ object BossAim {
     private var lastTarget: AimPose? = null
     private var lastTargetId = -1
 
+    /** Blood drop point being aimed at, for the highlight; null when blood aim has no target. */
+    private var bloodPoint: Vec3? = null
+    private var bloodId = -1
+
+    private const val BLOOD_SWITCH_MARGIN_DEG: Float = 10f
+
     private var toggled = false
     private var toggleKeyWasDown = false
 
@@ -66,6 +72,7 @@ object BossAim {
         resetState()
         AimTargets.clear()
         AimLock.clear()
+        BloodAimPoints.clear()
         toggled = false
         toggleKeyWasDown = false
     }
@@ -91,7 +98,7 @@ object BossAim {
     /** Client tick. Returns at once unless the feature is enabled. */
     fun tick() {
         val c = config
-        if (!c.enabled) return
+        if (!c.active) return
         val mc = Minecraft.getInstance()
         val level = mc.level
         val player = mc.player
@@ -103,12 +110,13 @@ object BossAim {
         }
         AimLock.tick(mc, level, player, c)
         AimTargets.tick(level, player, c)
+        if (c.bloodAim) BloodAimPoints.tick(level) else BloodAimPoints.clear()
         if (c.activation == AimActivation.TOGGLE_KEY) handleToggleKey(mc, c)
     }
 
     /** Start of world render. Turns the camera toward the target by the eased step for this frame. */
     fun onFrameStart() {
-        if (!config.enabled) return
+        if (!config.active) return
         val mc = Minecraft.getInstance()
         val level = mc.level
         val player = mc.player
@@ -125,6 +133,17 @@ object BossAim {
         if (!wantsAim(mc, player)) {
             stop()
             return
+        }
+        if (config.bloodAim) {
+            val eye = player.getEyePosition(mc.getDeltaTracker().getGameTimeDeltaPartialTick(false))
+            val blood = BloodAimPoints.pick(player, eye, bloodId, config.fovLimit / 2f, BLOOD_SWITCH_MARGIN_DEG)
+            if (blood != null) {
+                bloodId = blood.first
+                bloodPoint = blood.second
+                driveToward(player, eye, blood.first, blood.second)
+                return
+            }
+            bloodPoint = null
         }
         val entity = AimTargets.current(level)
         if (entity == null) {
@@ -146,8 +165,11 @@ object BossAim {
     /** Outline around the current target. Drawn whenever aim is enabled and a target is cached. */
     fun renderWorld() {
         val c = config
-        if (!c.enabled || !c.highlightTarget) return
+        if (!c.active || !c.highlightTarget) return
         val level: ClientLevel = Minecraft.getInstance().level ?: return
+        bloodPoint?.let {
+            if (engaged()) Gizmos.cuboid(BloodAimPoints.box(it), GizmoStyle.stroke(HIGHLIGHT_COLOR, HIGHLIGHT_STROKE))
+        }
         val entity: LivingEntity = AimLock.current(level) ?: AimTargets.current(level) ?: return
         Gizmos.cuboid(entity.boundingBox, GizmoStyle.stroke(HIGHLIGHT_COLOR, HIGHLIGHT_STROKE))
     }
@@ -169,23 +191,35 @@ object BossAim {
         }
         var aim = AimTargets.aimPointFor(entity, c.aimPoint, partial)
         if (c.lazyAim) aim = lazyOffset(aim, entity, now, c)
-        val targetPose = AimMath.lookAt(eye.x, eye.y, eye.z, aim.x, aim.y, aim.z)
+        drive(player, entity.id, AimMath.lookAt(eye.x, eye.y, eye.z, aim.x, aim.y, aim.z), now)
+    }
 
+    /** Eases toward a fixed world point (such as a predicted blood drop) with no entity behind it. */
+    private fun driveToward(player: LocalPlayer, eye: Vec3, id: Int, point: Vec3) {
+        if (id != lastTargetId) lazyPoint.reset()
+        val now = System.nanoTime() / 1_000_000L
+        drive(player, id, AimMath.lookAt(eye.x, eye.y, eye.z, point.x, point.y, point.z), now)
+    }
+
+    /** Shared motion step: restart or retarget the curve toward [targetPose] and turn by this frame's share. */
+    private fun drive(player: LocalPlayer, id: Int, targetPose: AimPose, now: Long) {
+        val c = config
+        val actual = AimPose(player.getYRot(), player.getXRot())
         val applied = lastApplied
         val end = lastTarget
         // The user's own mouse moved the camera away from the curve: restart from where the camera really is,
         // so the offset is corrected instead of carried along to the target.
         val userMoved = applied != null && AimMath.angularDistance(actual, applied) > USER_OVERRIDE_DEG
-        val restart = !motion.active || end == null || entity.id != lastTargetId || userMoved ||
+        val restart = !motion.active || end == null || id != lastTargetId || userMoved ||
             AimMath.angularDistance(end, targetPose) > RETARGET_THRESHOLD_DEG
         val from = if (restart || applied == null) actual else applied
         if (restart) {
-            motion.retarget(now, from, targetPose, c.settings(), seed = (now xor entity.id.toLong()).toInt())
+            motion.retarget(now, from, targetPose, c.settings(), seed = (now xor id.toLong()).toInt())
         } else {
             motion.updateTarget(targetPose)
         }
         lastTarget = targetPose
-        lastTargetId = entity.id
+        lastTargetId = id
 
         // Never fall back to the target pose: that would snap the camera instantly.
         val pose = motion.sample(now) ?: return

@@ -16,7 +16,11 @@ import net.icantpy.cosmetics.items.AppearanceOwnerScope
 import net.icantpy.cosmetics.items.CustomCosmeticsShare
 import net.icantpy.cosmetics.items.CustomRename
 import net.icantpy.cosmetics.items.CustomRenameEditorSession
+import net.icantpy.qol.camera.Freecam
+import net.icantpy.qol.lava.LavaEsp
 import net.icantpy.qol.camera.Freelook
+import net.icantpy.qol.fishing.FishingMacro
+import net.icantpy.qol.pets.PetSwap
 import net.icantpy.qol.visual.Visuals
 import net.icantpy.qol.perf.Culling
 import net.icantpy.qol.perf.FrameGen
@@ -42,6 +46,7 @@ import net.icantpy.hud.WorldEsp
 import net.icantpy.slayer.SlayerCarryCounter
 import net.icantpy.slayer.blaze.FirePit
 import net.icantpy.slayer.blaze.QuaziiBeamDodge
+import net.icantpy.slayer.aim.BloodAimPoints
 import net.icantpy.slayer.aim.BossAim
 import net.icantpy.slayer.aim.BossStrafe
 import net.icantpy.qol.path.Navigator
@@ -55,6 +60,9 @@ import net.icantpy.qol.invsort.InvSortController
 import net.icantpy.dungeon.timer.AlertSounds
 import net.icantpy.dungeon.score.ScoreTracker
 import net.icantpy.dungeon.splits.RunSplitsController
+import net.icantpy.dungeon.terminal.TerminalOverlay
+import net.icantpy.dungeon.terminal.TerminalSimulator
+import net.icantpy.dungeon.terminal.TerminalUserFonts
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
@@ -100,6 +108,10 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         loadDragons()
         CustomRename.load()
         Freelook.load()
+        Freecam.load()
+        LavaEsp.load()
+        PetSwap.load()
+        FishingMacro.load()
         MotionBlur.load()
         PerformancePreset.load()
         Culling.load()
@@ -109,6 +121,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         PerfHud.load()
         PlayerDisguise.load()
         ScoreTracker.load()
+        TerminalOverlay.load()
         BossAim.load()
         Navigator.load()
         CommandWaypoints.reset()
@@ -129,6 +142,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         InvSortController.onUnload()
         CustomRename.clearTransientCache()
         Freelook.onUnload()
+        Freecam.onUnload()
+        LavaEsp.reset()
         MotionBlur.unload()
         FrameGen.unload()
         PerfHud.unload()
@@ -149,6 +164,9 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         LeapOrient.onDisconnect()
         RunSplitsController.onUnload()
         ScoreTracker.onDisconnect()
+        TerminalSimulator.stop()
+        TerminalOverlay.reset()
+        TerminalUserFonts.close()
         LOGGER.info("icantpy payload unloaded")
         IcantpyLogFile.close()
     }
@@ -185,6 +203,10 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             return true
         }
         LeapOrient.handleCommand(message)?.let { reply ->
+            if (reply.isNotEmpty()) tell(reply)
+            return true
+        }
+        TerminalSimulator.handleCommand(message)?.let { reply ->
             if (reply.isNotEmpty()) tell(reply)
             return true
         }
@@ -236,7 +258,9 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         DragonController.onChat(message)
         MaskTimers.onChat(message)
         QuaziiBeamDodge.onChat(message)
+        BloodAimPoints.onChat(message)
         Loadout.onChat(message)
+        PetSwap.onChat(message)
     }
 
     override fun onBlock(pos: BlockPos, state: BlockState) {
@@ -277,11 +301,15 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         LeapOrient.onTick()
         RunSplitsController.tick()
         ScoreTracker.tick()
+        TerminalSimulator.tick()
+        TerminalOverlay.tick()
         CommandWaypoints.tick()
         CustomCosmeticsShare.tick()
         HeadTextures.tick()
         Freelook.tick()
+        Freecam.tick()
         Visuals.tick()
+        LavaEsp.tick()
         FirePit.tick()
         BossAim.tick()
         BossStrafe.tick()
@@ -295,6 +323,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         MaskTimers.onServerTick()
         if (DungeonListener.state.inBoss) LeapOrient.bossTracker.onServerTick()
         TickTimers.onServerTick()
+        TerminalOverlay.onServerTick()
     }
 
     override fun onDisconnect() {
@@ -310,12 +339,16 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         LeapOrient.onDisconnect()
         RunSplitsController.onDisconnect()
         ScoreTracker.onDisconnect()
+        TerminalSimulator.stop()
+        TerminalOverlay.reset()
         CommandWaypoints.reset()
         StatsArmor.onDisconnect()
         Loadout.onDisconnect()
         MaskTimers.onDisconnect()
         PlayerDisguise.onDisconnect()
         Freelook.onUnload()
+        Freecam.onUnload()
+        LavaEsp.reset()
         if (CustomRenameEditorSession.current() != null) CustomRename.persist()
         CustomRenameEditorSession.close()
         CustomRename.clearTransientCache()
@@ -376,6 +409,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         }
         if (event.id == "lifecycle.start_tick") {
             Freelook.tick()
+            Freecam.tick()
             QuaziiBeamDodge.startTick()
             return IcantpyDispatchResult.PASS
         }
@@ -384,6 +418,14 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
     }
 
     override fun query(query: IcantpyRuntimeQuery): IcantpyQueryResult {
+        if (Freecam.blocksClicks()) {
+            // While the camera flies, the body must not attack or use what it happens to face.
+            when (query.id) {
+                "input.attack.start" -> return IcantpyQueryResult(IcantpyDispatchResult.HANDLED, false)
+                "input.attack.pre" -> return IcantpyQueryResult(IcantpyDispatchResult.HANDLED, true)
+                "input.use.start" -> return IcantpyQueryResult(IcantpyDispatchResult.HANDLED)
+            }
+        }
         if (query.id == "input.attack.start" || query.id == "input.attack.pre") {
             BossStrafe.onAttack()
             val clickCount = (query.context["clickCount"] as? Number)?.toInt() ?: 1
@@ -412,13 +454,15 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             }
         }
         if (query.id == "input.player.turn") {
-            val consumed = Freelook.consumeTurn(query.context["yaw"], query.context["pitch"])
+            val consumed = Freecam.consumeTurn(query.context["yaw"], query.context["pitch"]) ||
+                Freelook.consumeTurn(query.context["yaw"], query.context["pitch"])
             return if (consumed) IcantpyQueryResult(IcantpyDispatchResult.HANDLED, true)
             else IcantpyQueryResult(IcantpyDispatchResult.PASS)
         }
         if (query.id == "render.camera.look_direction") {
             val camera = query.context["camera"] as? net.minecraft.client.Camera
                 ?: return IcantpyQueryResult(IcantpyDispatchResult.PASS)
+            Freecam.queryLook(camera)?.let { return it }
             val freelook = Freelook.queryLook(camera)
             if (freelook.result != IcantpyDispatchResult.PASS) return freelook
             return MorphCameraLook.query(camera)
@@ -465,6 +509,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         partialTick: Float,
     ): Boolean {
         val chest = screen as? AbstractContainerScreen<*> ?: return false
+        if (TerminalOverlay.render(chest, graphics, mouseX, mouseY)) return true
         return LeapMenu.renderOverlay(chest, graphics, mouseX, mouseY, partialTick)
     }
 
@@ -474,6 +519,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         net.icantpy.qol.auto.AutoInputGate.mixinVerdict(net.icantpy.qol.auto.AutoInputEvent.MOUSE_PRESS, event)
             ?.let { return it }
         val chest = screen as? AbstractContainerScreen<*> ?: return null
+        TerminalOverlay.mouseClicked(chest, event)?.let { return it }
         return LeapMenu.mouseClicked(chest, event, doubleClick)
     }
 
@@ -481,6 +527,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         net.icantpy.qol.auto.AutoInputGate.mixinVerdict(net.icantpy.qol.auto.AutoInputEvent.OTHER, event)
             ?.let { return it }
         val chest = screen as? AbstractContainerScreen<*> ?: return null
+        TerminalOverlay.mouseReleased(chest)?.let { return it }
         return LeapMenu.mouseReleased(chest, event)
     }
 
@@ -495,7 +542,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         return LeapMenu.keyPressed(chest, event)
     }
 
-    override fun leapOverlayReady(screen: Screen): Boolean = LeapMenu.overlayReady(screen)
+    override fun leapOverlayReady(screen: Screen): Boolean =
+        TerminalOverlay.overlayReady(screen) || LeapMenu.overlayReady(screen)
 
     override fun hideOdinLeapMenu(): Boolean = LeapMenu.shouldTakeOver()
 
@@ -552,6 +600,10 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         loadDragons()
         CustomRename.load()
         Freelook.load()
+        Freecam.load()
+        LavaEsp.load()
+        PetSwap.load()
+        FishingMacro.load()
         MotionBlur.load()
         PerformancePreset.load()
         Culling.load()
@@ -561,6 +613,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         PerfHud.load()
         PlayerDisguise.load()
         ScoreTracker.load()
+        TerminalOverlay.load()
         BossAim.load()
         Navigator.load()
         ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
@@ -587,11 +640,15 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             LeapOrient.onTick()
             RunSplitsController.tick()
             ScoreTracker.tick()
+            TerminalSimulator.tick()
+            TerminalOverlay.tick()
             CommandWaypoints.tick()
             CustomCosmeticsShare.tick()
             HeadTextures.tick()
             Freelook.tick()
+            Freecam.tick()
             Visuals.tick()
+            LavaEsp.tick()
             FirePit.tick()
             BossAim.tick()
             BossStrafe.tick()
@@ -606,6 +663,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             RunSplitsController.onDisconnect()
             DragonController.onDisconnect()
             ScoreTracker.onDisconnect()
+            TerminalOverlay.reset()
             IcantpyBridge.onDisconnect()
         }
         LOGGER.info("icantpy loaded as a normal Fabric mod")

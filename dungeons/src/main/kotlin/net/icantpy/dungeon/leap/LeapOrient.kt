@@ -8,6 +8,7 @@ import net.icantpy.dungeon.dragons.DragonController
 import net.icantpy.api.IcantpyCommandPrefix
 import net.icantpy.gui.McUi
 import net.icantpy.qol.auto.AutoActionQueue
+import net.icantpy.qol.loadout.Loadout
 import net.icantpy.qol.stats.StatsArmor
 import net.icantpy.dungeon.DungeonFloor
 import net.icantpy.dungeon.DungeonListener
@@ -91,7 +92,7 @@ object LeapOrient {
         val phase = LeapGameState.leapPhase()
         if (lastPhase != LeapPhase.UNKNOWN && phase != LeapPhase.UNKNOWN && phase != lastPhase) {
             LeapOrientTargets.dropIfPhaseChanged(phase)
-            LeapTriggerLockState.reset()
+            LeapTriggerLockState.resetForPhase()
             LeapFollowUps.discardAll("phase changed").forEach { discardFollowUp(it.card, it.reason) }
         }
         LeapRelicState.update(phase == LeapPhase.P5)?.let(::handleRelicPickup)
@@ -248,6 +249,10 @@ object LeapOrient {
 
     fun onDebugLeap(name: String) {
         tell("§a[debug] leaped to $name")
+        // In a local test world the dummy players are mannequins; a typed /tp (cheats) walks to the matching one.
+        if (mc.hasSingleplayerServer() && name.startsWith("dbg")) {
+            IcantpyClientActions.sendCommand("tp @s @e[type=mannequin,name=$name,limit=1]")
+        }
         onIncomingChat("You have teleported to $name!")
     }
 
@@ -406,6 +411,11 @@ object LeapOrient {
     fun simulateBossToken(token: String): String {
         val event = LeapOrientEngine.bossEventToken(token)
             ?: return "unknown boss: $token (${bossDebugTokens()})"
+        return simulateBossEvent(event)
+    }
+
+    /** Any trigger event: boss events with a chat line go through chat, the rest fire straight into card matching. */
+    fun simulateBossEvent(event: LeapTriggerEvent): String {
         val chat = LeapOrientEngine.bossChatLine(event)
         if (chat != null) {
             ensureDebugStubs()
@@ -517,7 +527,11 @@ object LeapOrient {
      */
     fun testCard(triggers: List<LeapOrientTrigger>) {
         if (triggers.isEmpty()) return
-        val member = LeapTriggerCards.pickTestMember(triggers, LeapRoster.selfClass(settings()))
+        val picked = LeapTriggerCards.pickTestMember(triggers, LeapRoster.selfClass(settings()))
+        // Test follows the same if / else if / else rules as a real firing, with the state you have right now.
+        val steps = LeapConditions.active(picked.steps, currentFacts())
+        val member = if (steps.size == picked.steps.size) picked else picked.copy(steps = steps)
+        if (member !== picked) tell("[icantpy] Conditions skip ${picked.steps.size - steps.size} step(s) right now")
         val plan = LeapTestPlanner.plan(member)
         if (plan.nothingToTest) {
             tell("[icantpy] Nothing to test")
@@ -758,8 +772,10 @@ object LeapOrient {
         val consumedPyTank = LeapGameState.leapPhase() == LeapPhase.P2 &&
             LeapRoster.selfClass(cfg) == LeapDungeonClass.MAGE && clazz == LeapDungeonClass.TANK
         if (consumedPyTank) pyTankLeaped = true
+        val expected = LeapOrientTargets.pick(LeapGameState.currentId(), cfg)?.centerTitle() ?: "none armed"
+        flow("you leaped to $leaped (${clazz.displayName}); armed target was: $expected")
         val unlocked = LeapTriggerLockState.markCompleted(clazz)
-        if (cfg.leapAnnounce && (DungeonListener.state.inDungeon || debugActive())) {
+        if (cfg.leapAnnounce && (DungeonListener.state.inDungeon || debugActive()) && !mc.hasSingleplayerServer()) {
             val line = LeapChatPatterns.formatAnnounce(cfg.announceTemplate, leaped, clazz)
             lastAnnounce = line
             lastAnnounceAt = System.currentTimeMillis()
@@ -775,6 +791,20 @@ object LeapOrient {
         unlocked.forEach { pending ->
             val current = cfg.triggers.firstOrNull { it.id == pending.trigger.id } ?: return@forEach
             applyTrigger(current, pending.event, pending.sender, pending.leaped, pending.message)
+        }
+        // Rows that waited on this leap on their own. They already passed their conditions when the card fired.
+        // Every row of one card that waited on this leap goes out as one ordered batch. Queued one by one they shared a
+        // dedupe key, so only the first ran.
+        LeapTriggerLockState.takeSteps(clazz).groupBy { it.trigger.id }.forEach { (id, released) ->
+            val current = cfg.triggers.firstOrNull { it.id == id } ?: return@forEach
+            val steps = released.map { waiting ->
+                flow("${stepLabel(waiting.step)}: RELEASED, the leap to ${clazz.displayName} it waited for just happened (card '${current.title()}')")
+                waiting.step.copy(requires = LeapDungeonClass.EMPTY, branch = LeapBranch.ALWAYS, conditions = emptyList())
+            }
+            applyAutoSteps(current.copy(steps = steps), released.first().sender, released.first().message, keySuffix = "#after-${clazz.name}")
+        }
+        LeapTriggerLockState.waitingLines { stepLabel(it) }.let { lines ->
+            if (lines.isNotEmpty()) flow("still waiting: " + lines.joinToString("; "))
         }
     }
 
@@ -795,7 +825,16 @@ object LeapOrient {
                 return@forEach
             }
             if (trigger.armLeap) armChainLeap(trigger, leaped, selfName, selfClass, ctx)
-            applyAutoSteps(trigger, selfName ?: "you", trigger.title())
+            // Chain cards fire on this very leap, so a row's requirement must be this leap, and its conditions are checked now.
+            val steps = LeapConditions.active(trigger.steps, currentFacts()).filter {
+                LeapAutoStepList.isLeapRow(it) || LeapTriggerLockState.isSatisfiedByLeap(it, leaped.asClass)
+            }
+            flow(
+                "chain card '${trigger.title()}' fired by your leap to ${leaped.asClass?.displayName ?: leaped.rawTarget}; running " +
+                    (steps.joinToString(" | ") { stepLabel(it) }.ifBlank { "no rows" }) +
+                    " (${trigger.steps.size - steps.size} skipped by requirement or condition)",
+            )
+            applyAutoSteps(trigger.copy(steps = steps), selfName ?: "you", trigger.title())
         }
     }
 
@@ -1087,9 +1126,27 @@ object LeapOrient {
             record(sender, message, true, false, check.rejected ?: "rejected")
             return false
         }
+        if ((trigger.bossOnly || settings().bossOnlyTriggers) && !DungeonListener.state.inBoss && !debugActive()) {
+            record(sender, message, true, false, "only in boss fight")
+            return false
+        }
+        // If / else if / else rows are decided now, from the player's state at the moment the card fires.
+        val steps = LeapConditions.active(trigger.steps, currentFacts())
+        val live = if (steps.size == trigger.steps.size) trigger else trigger.copy(steps = steps)
+        if (live !== trigger) {
+            val dropped = trigger.steps.size - steps.size
+            record(sender, message, true, false, "conditions skipped $dropped step${if (dropped == 1) "" else "s"}")
+        }
+        flow(
+            "card '${trigger.title()}' fired by ${event.label()} (from $sender). Rows: " +
+                live.steps.joinToString(" | ") { step ->
+                    stepLabel(step) + step.requires.takeIf { it.isReal() }?.let { " [needs a leap to ${it.displayName}]" }.orEmpty()
+                }.ifBlank { "none" },
+        )
         // A locked leap waits as a whole card, so its auto steps also wait for the prerequisite leap.
-        if (trigger.armLeap && !LeapTriggerLockState.isSatisfied(trigger)) {
+        if (live.armLeap && !LeapTriggerLockState.isSatisfied(live)) {
             LeapTriggerLockState.defer(DeferredLeapTrigger(trigger, event, sender, leaped, message))
+            flow("card '${trigger.title()}' is WAITING on a leap to ${trigger.requiresTargetClass.displayName} before it arms its target or runs any row")
             record(
                 sender,
                 message,
@@ -1099,9 +1156,47 @@ object LeapOrient {
             )
             return true
         }
-        if (trigger.armLeap) armLeapTarget(trigger, sender, leaped, message)
-        applyAutoSteps(trigger, sender, message)
+        if (live.armLeap) armLeapTarget(live, sender, leaped, message)
+        // A row with its own requirement waits for that leap on its own; the other rows run now.
+        // A card fired by my own leap only runs rows whose requirement is that leap; the others are not parked, or
+        // they would fire later on a different leap of the same class.
+        val byThisLeap = event == LeapTriggerEvent.SELF_LEAP && leaped != null
+        val (ready, waiting) = live.steps.partition {
+            LeapAutoStepList.isLeapRow(it) ||
+                if (byThisLeap) LeapTriggerLockState.isSatisfiedByLeap(it, leaped.asClass) else !it.requires.isReal()
+        }
+        ready.forEach { step ->
+            if (!LeapAutoStepList.isLeapRow(step)) flow("${stepLabel(step)}: no leap required, runs now")
+        }
+        waiting.forEach { step ->
+            if (byThisLeap) {
+                flow("${stepLabel(step)}: SKIPPED, this leap was to ${leaped?.asClass?.displayName ?: "an unknown class"} but the row needs ${step.requires.displayName}")
+                record(sender, message, true, false, "${step.label(StatsArmor.presetLabels())} needs a leap to ${step.requires.displayName}")
+                return@forEach
+            }
+            LeapTriggerLockState.deferStep(DeferredLeapStep(live, step, sender, message))
+            flow("${stepLabel(step)}: WAITING for your next leap to ${step.requires.displayName} (Hypixel: runs right after you teleport to the ${step.requires.displayName})")
+            record(sender, message, true, false, "${step.label(StatsArmor.presetLabels())} waits for leap to ${step.requires.displayName}")
+        }
+        applyAutoSteps(live.copy(steps = ready), sender, message)
         return true
+    }
+
+    /** What conditions can read right now. Unknown values stay null or empty so their terms are false. */
+    private fun currentFacts(): LeapFacts {
+        val ctx = routeContext()
+        val player = Minecraft.getInstance().player
+        val health = player?.takeIf { it.maxHealth > 0f }?.let { (it.health / it.maxHealth * 100f).toInt() }
+        return LeapFacts(
+            loadout = Loadout.equippedNumber(),
+            selfClass = ctx.selfClass,
+            partyClasses = ctx.knownPlayers.map { it.clazz }.filter { it.isReal() }.toSet(),
+            leapedTo = LeapTriggerLockState.completed(),
+            phase = ctx.phase,
+            floor = ctx.floor,
+            route = ctx.route,
+            healthPercent = health,
+        )
     }
 
     private fun armLeapTarget(
@@ -1119,15 +1214,18 @@ object LeapOrient {
             playerForClass = { clazz -> LeapRoster.playerForClass(clazz, LeapRoster.knownPlayers()) },
             context = routeContext(),
         ) ?: run {
+            flow("leap target for '${trigger.title()}': NONE found (no player of the wanted class is known); nothing armed, so left-click leap has no target")
             record(sender, message, true, false, "target missing")
             return
         }
         if (LeapOrientEngine.duplicateClassUnsafe(request.targetClass ?: LeapDungeonClass.EMPTY, routeContext()) &&
             request.targetName.isBlank()
         ) {
+            flow("leap target for '${trigger.title()}': two players share that class, refusing to guess")
             record(sender, message, true, false, "duplicate class needs player")
             return
         }
+        flow("leap target for '${trigger.title()}': ${request.targetName.ifBlank { request.targetClass?.displayName ?: "?" }} (${request.targetClass?.displayName ?: "unknown class"}); left-click leap will go there")
         val armed = armRequest(request, sender, message, keywordHit = true) ?: return
         LeapFollowUps.register(trigger, armed, request.targetName, request.targetClass)
     }
@@ -1185,8 +1283,8 @@ object LeapOrient {
      * [applyTrigger], so only the other rows are queued. Rows without a complete target are reported
      * in chat and left out; the rest still run in order.
      */
-    private fun applyAutoSteps(trigger: LeapOrientTrigger, sender: String, message: String) {
-        val key = LeapTriggerCards.cardKeyOf(trigger, settings().triggers)
+    private fun applyAutoSteps(trigger: LeapOrientTrigger, sender: String, message: String, keySuffix: String = "") {
+        val key = LeapTriggerCards.cardKeyOf(trigger, settings().triggers) + keySuffix
         // Mark rows are instant, like the leap target: they go on the world now and never enter the queue.
         val marks = LeapMarkRouter.route(trigger.steps)
         marks.skipped.forEach { AutoActionQueue.say("Auto step skipped: ${LeapAutoStep.problem(it)}") }
@@ -1209,6 +1307,10 @@ object LeapOrient {
             return
         }
         val queued = AutoActionQueue.requestBatch(key, route.targets, trigger.title())
+        flow(
+            if (queued) "queued now: ${trigger.stepLabels(StatsArmor.presetLabels()).joinToString(" -> ")} (Hypixel: each one sends its command, waits for its menu, then clicks)"
+            else "NOT queued (already queued or repeated): ${trigger.stepLabels(StatsArmor.presetLabels()).joinToString(" -> ")}",
+        )
         val detail = if (queued) trigger.stepLabels(StatsArmor.presetLabels()).joinToString(" → ") else "already queued or repeated"
         record(sender, message, true, queued, detail)
     }
@@ -1284,6 +1386,45 @@ object LeapOrient {
 
     private fun classOf(sender: String): LeapDungeonClass = LeapRoster.classOf(sender, settings())
 
+    private var lastAutoLeapNote: String = ""
+    private var lastAutoLeapNoteAt: Long = 0L
+
+    /** Debug-only reason a left-click Spirit Leap did not auto leap; repeats of the same reason are dropped. */
+    fun noteAutoLeap(detail: String) {
+        if (!debugActive()) return
+        val now = System.currentTimeMillis()
+        // A repeat of the same reason is only dropped when it follows within a second, so every separate click shows up.
+        if (detail == lastAutoLeapNote && now - lastAutoLeapNoteAt < 1_000L) return
+        lastAutoLeapNote = detail
+        lastAutoLeapNoteAt = now
+        flow("left click: $detail")
+    }
+
+    /**
+     * Debug narration of what the card pipeline did and what it is waiting on, including what the same step would do on
+     * Hypixel. Printed to chat and the chat-debug HUD while leaporient debug is on.
+     */
+    fun flow(text: String) {
+        if (!debugActive()) return
+        // Always in the game log, so a run can be read back afterwards even with the chat lines switched off.
+        net.icantpy.Icantpy.LOGGER.info("[leap flow] $text")
+        LeapOrientChatDebug.record(
+            LeapOrientChatDebug.Entry(
+                sender = "flow",
+                message = text,
+                keywordHit = true,
+                selfOk = true,
+                senderOk = true,
+                armed = true,
+                detail = "",
+            ),
+        )
+        // Chat output follows the debug page's "Trigger chat messages" switch; the chat-debug HUD always gets the line.
+        if (settings().showChatDebugMessages) tell("§b[flow] §f$text")
+    }
+
+    private fun stepLabel(step: LeapAutoStep): String = step.label(StatsArmor.presetLabels())
+
     private fun record(sender: String, message: String, keywordHit: Boolean, armed: Boolean, detail: String) {
         val entry = LeapOrientChatDebug.Entry(
             sender = sender,
@@ -1329,16 +1470,23 @@ object LeapOrient {
     private fun giveDebugItem(): String {
         if (!canUseDebugCommands()) return "leaporient item requires debug"
         val player = mc.player ?: return "no player"
-        val stack = ItemStack(Items.ENDER_EYE)
+        val stack = ItemStack(Items.WITHER_SKELETON_SKULL)
         stack.set(DataComponents.CUSTOM_NAME, Component.literal("§5Spirit Leap"))
         player.inventory.add(stack)
         return "gave debug Spirit Leap item"
     }
 
-    private fun isDebugLeapItem(stack: ItemStack): Boolean {
-        if (stack.item != Items.ENDER_EYE && stack.item != Items.RECOVERY_COMPASS) return false
-        val name = stack.get(DataComponents.CUSTOM_NAME)?.string ?: return debugActive()
-        return name.contains("Spirit Leap", ignoreCase = true)
+    /**
+     * The test Spirit Leap. The ender eye and recovery compass keep working in any debug session; any other item,
+     * such as the ender pearl the real one uses, only counts in a singleplayer world, so a real Spirit Leap on a
+     * server is never swallowed by the debug menu.
+     */
+    fun isDebugLeapItem(stack: ItemStack): Boolean {
+        if (stack.isEmpty) return false
+        val name = stack.get(DataComponents.CUSTOM_NAME)?.string
+        val legacy = stack.item == Items.ENDER_EYE || stack.item == Items.RECOVERY_COMPASS
+        if (legacy) return name?.contains("Spirit Leap", ignoreCase = true) ?: debugActive()
+        return mc.hasSingleplayerServer() && name?.contains("Spirit Leap", ignoreCase = true) == true
     }
 
     private fun status(): String {

@@ -157,8 +157,21 @@ object IcantpyGui {
         }
     }
 
+    /** The settings window draws through Skia on a WGL context, which exists only on Windows. */
+    fun skiaSupported(): Boolean = System.getProperty("os.name").orEmpty().startsWith("Windows")
+
     fun showConfig() {
         val mc = Minecraft.getInstance()
+        if (!skiaSupported()) {
+            // Without this the WGL lookup throws and takes the whole game down.
+            mc.player?.sendSystemMessage(
+                Component.literal(
+                    "§c[icantpy] The settings window needs Windows. On this system use /icantpy termsim " +
+                        "and /icantpy termpreview; other settings live in config/icantpy-*.json.",
+                ),
+            )
+            return
+        }
         SkiaContext.initialize()
         McUi.setScreen(mc, IcantpyConfigScreen())
         McUi.releaseMouse(mc)

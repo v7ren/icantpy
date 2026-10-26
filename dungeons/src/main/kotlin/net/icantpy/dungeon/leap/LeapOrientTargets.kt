@@ -148,10 +148,17 @@ object LeapOrientTargets {
         gameStateId: String,
         settings: LeapOrientSettings,
         nowMs: Long = System.currentTimeMillis(),
+    ): PendingLeap? = pickLive(gameStateId, settings, nowMs) ?: hold.fallback()
+
+    /** Like [pick] but only a lock that is armed right now; the held fallback target never counts. */
+    fun pickLive(
+        gameStateId: String,
+        settings: LeapOrientSettings,
+        nowMs: Long = System.currentTimeMillis(),
     ): PendingLeap? {
         prune(nowMs)
         val live = hold.overrides()
-        if (live.isEmpty()) return hold.fallback()
+        if (live.isEmpty()) return null
         val preferred = settings.preferred(gameStateId)
         preferredMatch(live, preferred)?.let { return it }
         return live.maxWithOrNull(compareBy<PendingLeap> { it.priority }.thenBy { it.atMs })

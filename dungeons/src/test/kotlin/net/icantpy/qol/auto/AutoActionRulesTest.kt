@@ -49,7 +49,7 @@ class AutoActionRulesTest {
 
     @Test
     fun statsAndLoadoutNeverStartWhileAnyScreenIsOpen() {
-        for (kind in listOf(AutoActionKind.EQUIP_STATS, AutoActionKind.SWITCH_LOADOUT)) {
+        for (kind in listOf(AutoActionKind.EQUIP_STATS, AutoActionKind.SWITCH_LOADOUT, AutoActionKind.SWAP_PET)) {
             assertEquals(
                 AutoDecision.WAIT,
                 AutoActionRules.decide(kind, reaction, reaction, AutoScreenState.PLAYER_INVENTORY, busy = false),

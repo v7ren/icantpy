@@ -7,12 +7,16 @@ import net.icantpy.gui.SkiaContext
 import net.icantpy.gui.SkiaSurface
 import net.icantpy.gui.clampScroll
 import net.icantpy.cosmetics.items.CustomRename
+import net.icantpy.qol.camera.Freecam
+import net.icantpy.qol.camera.FreecamConfig
 import net.icantpy.qol.camera.Freelook
 import net.icantpy.qol.camera.FreelookConfig
 import net.icantpy.qol.visual.AmbientStyle
 import net.icantpy.qol.visual.HandShaderMode
 import net.icantpy.qol.visual.SwingMode
 import net.icantpy.qol.visual.TrailStyle
+import net.icantpy.qol.lava.LavaEsp
+import net.icantpy.qol.lava.LavaEspConfig
 import net.icantpy.qol.visual.Visuals
 import net.icantpy.qol.visual.VisualsConfig
 import net.icantpy.qol.perf.Culling
@@ -58,6 +62,10 @@ import net.icantpy.dungeon.leap.LeapPreferKind
 import net.icantpy.dungeon.leap.LeapRoster
 import net.icantpy.dungeon.leap.LeapStormRoute
 import net.icantpy.dungeon.leap.LeapAutoKind
+import net.icantpy.dungeon.leap.LeapBranch
+import net.icantpy.dungeon.leap.LeapConditions
+import net.icantpy.dungeon.leap.LeapFact
+import net.icantpy.dungeon.leap.LeapTerm
 import net.icantpy.dungeon.leap.LeapAutoRouter
 import net.icantpy.dungeon.leap.LeapAutoStep
 import net.icantpy.dungeon.leap.LeapTriggerEvent
@@ -72,12 +80,18 @@ import net.icantpy.qol.auto.CursorGuard
 import net.icantpy.qol.invsort.InvSortController
 import net.icantpy.qol.invsort.InvSortEditorScreen
 import net.icantpy.qol.loadout.LoadoutPlan
+import net.icantpy.qol.fishing.FishingMacro
+import net.icantpy.qol.fishing.FishingMacroConfig
+import net.icantpy.qol.pets.PetMenu
+import net.icantpy.qol.pets.PetSwap
+import net.icantpy.qol.pets.PetSwapConfig
 import net.icantpy.qol.stats.StatsArmor
 import net.icantpy.slayer.SlayerCarryCounter
 import net.icantpy.slayer.blaze.BeamDodge
 import net.icantpy.slayer.blaze.EscapeMode
 import net.icantpy.slayer.blaze.FirePit
 import net.icantpy.slayer.blaze.FirePitConfig
+import net.icantpy.slayer.blaze.PitPhase
 import net.icantpy.slayer.aim.AimActivation
 import net.icantpy.slayer.aim.AimConfig
 import net.icantpy.slayer.aim.AimEasing
@@ -86,6 +100,7 @@ import net.icantpy.slayer.aim.BossAim
 import net.icantpy.dungeon.timer.AlertSounds
 import net.icantpy.dungeon.dragons.DragonController
 import net.icantpy.dungeon.score.ScoreTracker
+import net.icantpy.dungeon.terminal.TerminalOverlay
 import net.icantpy.dungeon.splits.RunSplitsController
 import net.icantpy.dungeon.timer.TickTimers
 import net.icantpy.dungeon.timer.TimerClock
@@ -112,8 +127,26 @@ private const val OVERVIEW_CARD_HEIGHT = 58
 private const val OVERVIEW_CARD_GAP = 10
 private const val OVERVIEW_TOGGLE_RESERVE = 48
 private const val CONTENT_TOP_PAD = 12
+
+/** How far above a section the outline scrolls to, and when a section counts as the one being read. */
+private const val OUTLINE_LEAD = 12
 /** Extra space above a section heading; grouped() already adds 8 after each block, so sections get 16. */
 private const val SECTION_GAP = 8
+private const val PET_FIELD_WIDTH = 150
+
+/** Gap the pages leave between two sections; a section card ends this far above the next heading. */
+private const val CARD_GAP = 8
+private const val CARD_PAD = 14
+
+/** Pages drawn as one card per section instead of one box per row. */
+private val CARD_CONTENTS = setOf(
+    ConfigContent.BLAZE_FIRE,
+    ConfigContent.BLAZE_QUAZII,
+    ConfigContent.BLAZE_MOBS,
+    ConfigContent.BOSS_AIM,
+    ConfigContent.BLOOD_HELPER,
+    ConfigContent.LIVID_HELPER,
+)
 private const val SCROLL_STEP = 22
 private const val LEAP_ROW_CONTROL_HEIGHT = 24
 private const val LEAP_CHEVRON_SIZE = 8
@@ -138,6 +171,23 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private var descriptionHoverKey: String? = null
     private var descriptionHoverSince = 0L
     private var scroll = ConfigUiSession.scrollOf(page, subtab)
+
+    /**
+     * Section cards. A card's background has to be painted before its rows, so its height is the one measured
+     * on the previous frame (keyed by page, subtab and title); the first frame draws no background.
+     */
+    private val cardExtent = HashMap<String, Int>()
+
+    /** Sidebar filter: only pages whose feature is switched on. */
+    private var onlyEnabled = false
+
+    /** Section titles and their content offsets from the frame being drawn, and the finished list shown in the outline. */
+    private val anchorsNext = ArrayList<Pair<String, Int>>()
+    private var anchors: List<Pair<String, Int>> = emptyList()
+    private var contentOrigin = 0
+    private var cardKey: String? = null
+    private var cardTop = 0
+    private var cardRows = 0
     private var sidebarScroll = 0
     private var contentHeight = 0
     private var hits: List<GuiHit> = emptyList()
@@ -152,6 +202,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private val splitsPage = SplitsPage()
     private val scorePage = ScorePage()
     private val dragonsPage = DragonsPage()
+    private val terminalsPage = TerminalsPage()
     private var focused: String? = null
     private var toast: String? = null
     private var toastUntil = 0L
@@ -161,8 +212,12 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private var leapDropdownSpec: LeapDropdownSpec? = null
     private var openDropdownRects: List<LayoutRect> = emptyList()
     private var pendingRevealId: String? = null
-    private var debugBossToken = "storm"
-    private var debugFireEvent = LeapTriggerEvent.SECRETS_REACHED
+    private var debugBossEvent: LeapTriggerEvent
+        get() = DebugUiMemory.bossEvent
+        set(value) { DebugUiMemory.bossEvent = value }
+    private var debugFireEvent: LeapTriggerEvent
+        get() = DebugUiMemory.fireEvent
+        set(value) { DebugUiMemory.fireEvent = value }
     private var debugPartyToken = "arch"
     private var renamePreview: RenamePreview? = null
     private var metrics = ConfigMetrics.compute(640, 360, GuiLookSettings())
@@ -212,9 +267,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         leapDropdownSpec = null
         openDropdownRects = emptyList()
         surface.paint(graphics) { canvas ->
-            val draw = MenuDraw(canvas, m.viewTop, m.viewBottom, m.contentLeft, m.panelX + m.panelW, mouseX, mouseY, chrome)
+            val draw = MenuDraw(canvas, m.viewTop, m.viewBottom, m.contentLeft, m.panelX + m.panelW - m.toc, mouseX, mouseY, chrome)
             paintShell(draw, m)
             paintPageContent(draw, m)
+            paintOutline(draw, m)
             draw.unclipped { drawLeapDropdownOverlay(draw) }
             if (searchOpen()) draw.unclipped { draw.paintSearchResults(m, ConfigNav.search(field(SEARCH_FIELD_ID)), ::openFromSearch) }
             draw.paintTooltip()
@@ -231,7 +287,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             scroll = clampScroll(scroll, contentHeight, m.viewHeight)
             ConfigUiSession.save(page, subtab, scroll)
         }
-        sidebarScroll = clampScroll(sidebarScroll, sidebarContentHeight(), sidebarBottom(m) - sidebarTop(m))
+        sidebarScroll = clampScroll(sidebarScroll, sidebarContentHeight(sidebarState()), sidebarBottom(m) - sidebarTop(m))
     }
 
     private fun shellMetrics(): ConfigMetrics {
@@ -245,13 +301,42 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     /** Paints the window frame, the page list and the header bar (sidebar stays in its own clip). */
     private fun paintShell(draw: MenuDraw, m: ConfigMetrics) {
         draw.paintShellFrame(m)
-        draw.paintSidebar(m, page, sidebarScroll, ::openPage)
+        draw.paintSidebar(
+            m, page, sidebarScroll, sidebarState(), field(SEARCH_FIELD_ID), focused == SEARCH_FIELD_ID, ::openPage,
+        )
         draw.unclipped {
-            draw.paintHeader(m, page, headerToggle(), field(SEARCH_FIELD_ID), focused == SEARCH_FIELD_ID)
+            draw.paintHeader(m, page, headerToggle())
             if (page.subtabs.isNotEmpty()) {
                 draw.paintSubtabs(m, page.subtabs, subtab, ::selectSubtab)
             }
         }
+    }
+
+    private fun sidebarState(): SidebarState {
+        val look = TickTimers.settings.look
+        return SidebarState(
+            onlyEnabled = onlyEnabled,
+            onFilter = { only ->
+                onlyEnabled = only
+                sidebarScroll = 0
+            },
+            pageOn = ::pageEnabled,
+            enabledCount = ConfigNav.overviewPages().count { pageEnabled(it) == true },
+            lightTheme = look.theme == GuiThemeId.GLASS_LIGHT,
+            onTheme = {
+                TickTimers.updateLook {
+                    it.copy(theme = if (it.theme == GuiThemeId.GLASS_LIGHT) GuiThemeId.GLASS_DARK else GuiThemeId.GLASS_LIGHT)
+                }
+            },
+            onAppearance = { openPage(ConfigPage.APPEARANCE) },
+        )
+    }
+
+    /** On/off state of a page's primary feature, or null when it has no master switch. */
+    private fun pageEnabled(target: ConfigPage): Boolean? {
+        val module = target.primaryModuleId?.let(AetherModules::byId) ?: return null
+        if (!AetherModules.hasMasterSwitch(module.id)) return null
+        return moduleEnabled(module)
     }
 
     private fun paintPageContent(draw: MenuDraw, m: ConfigMetrics) {
@@ -260,7 +345,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             Rect.makeLTRB(
                 m.contentLeft.toFloat(),
                 m.viewTop.toFloat(),
-                (m.panelX + m.panelW - 8).toFloat(),
+                (m.panelX + m.panelW - m.toc - 8).toFloat(),
                 m.viewBottom.toFloat(),
             ),
         )
@@ -269,7 +354,28 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         draw.canvas.restore()
     }
 
-    private fun drawCurrentPage(draw: MenuDraw, m: ConfigMetrics, y: Int): Int = when (ConfigContents.at(page, subtab)) {
+    private fun drawCurrentPage(draw: MenuDraw, m: ConfigMetrics, y: Int): Int {
+        cardKey = null
+        anchorsNext.clear()
+        contentOrigin = y + scroll - m.viewTop
+        val heroH = draw.paintHero(innerLeft(), y, innerWidth(), page)
+        val end = drawPageBody(draw, m, y + heroH)
+        closeCard(end + CARD_GAP)
+        anchors = anchorsNext.toList()
+        return end
+    }
+
+    /** Section titles of the current page and the index being read, for the outline column. */
+    private fun paintOutline(draw: MenuDraw, m: ConfigMetrics) {
+        if (m.toc <= 0 || anchors.isEmpty()) return
+        var active = 0
+        anchors.forEachIndexed { index, (_, offset) -> if (offset - OUTLINE_LEAD <= scroll) active = index }
+        draw.paintToc(m, anchors.map { it.first }, active) { index ->
+            anchors.getOrNull(index)?.let { scroll = clampScroll((it.second - OUTLINE_LEAD).coerceAtLeast(0), contentHeight, m.viewHeight) }
+        }
+    }
+
+    private fun drawPageBody(draw: MenuDraw, m: ConfigMetrics, y: Int): Int = when (ConfigContents.at(page, subtab)) {
         ConfigContent.OVERVIEW -> drawOverview(draw, y)
         ConfigContent.CLOCKS_DISPLAY -> drawClocksDisplay(draw, y)
         ConfigContent.CLOCKS_DUNGEON -> drawClocksDungeon(draw, y)
@@ -279,6 +385,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         ConfigContent.SPLITS -> splitsPage.draw(draw, m, y, ::toast) { openRunHudEditor(RunHudEditorScreen.Target.SPLITS) }
         ConfigContent.SCORE -> scorePage.draw(draw, m, y) { openRunHudEditor(RunHudEditorScreen.Target.SCORE) }
         ConfigContent.DRAGONS -> dragonsPage.draw(draw, m, y, ::toast) { openRunHudEditor(RunHudEditorScreen.Target.DRAGON) }
+        ConfigContent.TERMINALS -> terminalsPage.draw(draw, m, y) { McUi.setScreen(Minecraft.getInstance(), TerminalPreviewScreen()) }
         ConfigContent.LEAP_ROUTES -> drawLeapRoute(draw, y)
         ConfigContent.LEAP_LAYOUT -> drawLeapLayout(draw, y)
         ConfigContent.LEAP_LOOK -> drawLeapLook(draw, y)
@@ -308,7 +415,11 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         ConfigContent.CARRIES_COUNTER -> drawCarriesCounter(draw, y)
         ConfigContent.CARRIES_KEYS -> drawCarriesKeys(draw, y)
         ConfigContent.CARRIES_PLAYERS -> drawCarriesPlayers(draw, y)
-        ConfigContent.FIRE_PITS -> drawFirePits(draw, y)
+        ConfigContent.BLAZE_FIRE -> drawBlazeFire(draw, y)
+        ConfigContent.BLAZE_QUAZII -> drawBlazeQuazii(draw, y)
+        ConfigContent.BLAZE_MOBS -> drawBlazeMobs(draw, y)
+        ConfigContent.BLOOD_HELPER -> drawBloodHelper(draw, y)
+        ConfigContent.LIVID_HELPER -> drawLividHelper(draw, y)
         ConfigContent.BOSS_AIM -> drawBossAim(draw, y)
         ConfigContent.APPEARANCE_THEME -> drawAppearanceTheme(draw, y)
         ConfigContent.APPEARANCE_TEXT_SHAPE -> drawAppearanceTextShape(draw, y)
@@ -333,7 +444,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
 
     private fun paintContentScrollbar(draw: MenuDraw, m: ConfigMetrics) {
         if (contentHeight > m.viewHeight) {
-            draw.scrollbar(m.panelX + m.panelW - 10, m.viewTop + 8, m.viewHeight - 16, contentHeight, scroll)
+            draw.scrollbar(m.panelX + m.panelW - m.toc - 10, m.viewTop + 8, m.viewHeight - 16, contentHeight, scroll)
         }
     }
 
@@ -393,10 +504,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         val sidebarHeight = sidebarBottom(m) - sidebarTop(m)
         if (mx >= m.panelX && mx < m.contentLeft && my >= sidebarTop(m) && my < sidebarBottom(m)) {
-            sidebarScroll = clampScroll(sidebarScroll - delta, sidebarContentHeight(), sidebarHeight)
+            sidebarScroll = clampScroll(sidebarScroll - delta, sidebarContentHeight(sidebarState()), sidebarHeight)
             return true
         }
-        if (mx < m.contentLeft || mx >= m.panelX + m.panelW || my < m.viewTop || my >= m.viewBottom) {
+        if (mx < m.contentLeft || mx >= m.panelX + m.panelW - m.toc || my < m.viewTop || my >= m.viewBottom) {
             return true
         }
         scroll = clampScroll(scroll - delta, contentHeight, m.viewHeight)
@@ -491,7 +602,116 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        return y
+        return drawFishingMacro(draw, drawPetSwap(draw, y))
+    }
+
+    private fun drawFishingMacro(draw: MenuDraw, startY: Int): Int {
+        val fishing = FishingMacro.config
+        var y = section(
+            draw,
+            startY + SECTION_GAP,
+            "Fishing macro",
+            "Casts, waits for the !!! bite marker at your hook and reels in, repeatedly. Hold a fishing rod. Stops itself if the rod leaves your hand, nothing bites, or you disconnect.",
+        )
+        val startLabel = if (FishingMacro.running) "Stop" else "Start"
+        y = actionRow(draw, y, "Macro", if (FishingMacro.running) "Running" else "Off", last = false) { cy ->
+            draw.button(startLabel, rightX(draw.measure(startLabel, draw.buttonFont) + 28), cy, ButtonStyle.PRIMARY) {
+                FishingMacro.toggle()
+            }
+        }
+        y = bindRow(draw, y, "Toggle key", "fishKey", fishing.key, last = false)
+        y = delayPairRow(draw, y, "Reel delay (ms)", "Wait after the bite marker appears, before reeling.", "fish:reel", fishing.reelMinMs, fishing.reelMaxMs)
+        y = delayPairRow(draw, y, "Cast delay (ms)", "Wait after a reel before casting again.", "fish:cast", fishing.castMinMs, fishing.castMaxMs)
+        val quietId = "fish:quiet"
+        y = actionRow(draw, y, "No-bite timeout (s)", "Re-cast after this long without a bite; stops after three in a row.", last = true) { cy ->
+            draw.field(quietId, field(quietId, fishing.noBiteSeconds.toString()), "45", rightX(64), cy, 64, focused == quietId)
+        }
+        return note(
+            draw,
+            y,
+            "To fish with a pet, turn on Swap on cast in Pet swap above: every cast the macro makes then summons that pet. If a bite shows while that swap is still running, the swap is dropped so the reel is not held up.",
+        )
+    }
+
+    /** One row with a min and a max millisecond field. */
+    private fun delayPairRow(draw: MenuDraw, y: Int, title: String, subtitle: String, idPrefix: String, min: Int, max: Int): Int {
+        val minId = "$idPrefix:min"
+        val maxId = "$idPrefix:max"
+        return actionRow(draw, y, title, subtitle, last = false) { cy ->
+            draw.field(maxId, field(maxId, max.toString()), "max", rightX(64), cy, 64, focused == maxId)
+            draw.field(minId, field(minId, min.toString()), "min", rightX(64) - 8 - 64, cy, 64, focused == minId)
+        }
+    }
+
+    private fun drawPetSwap(draw: MenuDraw, startY: Int): Int {
+        val pets = PetSwap.config
+        var y = section(
+            draw,
+            startY + SECTION_GAP,
+            "Pet swap",
+            "One key per pet. A press sends /pets, clicks that pet in the menu like a player would, then closes it. A pet that is already out is left alone.",
+        )
+        y = toggleRow(draw, y, "Enabled", "Allow the pet keys below.", pets.enabled, last = false) {
+            PetSwap.edit { it.copy(enabled = !it.enabled) }
+        }
+        y = toggleRow(draw, y, "Instant", "No delays at all: the swap runs as fast as the server answers.", pets.instant, last = false) {
+            PetSwap.edit { it.copy(instant = !it.instant) }
+        }
+        val minId = "pet:delayMin"
+        val maxId = "pet:delayMax"
+        y = actionRow(draw, y, "Min delay (ms)", "Shortest random wait before /pets, each click and the close.", last = false) { cy ->
+            draw.field(minId, field(minId, pets.delayMinMs.toString()), "80", rightX(64), cy, 64, focused == minId)
+        }
+        y = actionRow(draw, y, "Max delay (ms)", "Longest random wait. Ignored while Instant is on.", last = false) { cy ->
+            draw.field(maxId, field(maxId, pets.delayMaxMs.toString()), "200", rightX(64), cy, 64, focused == maxId)
+        }
+        y = toggleRow(
+            draw, y, "Swap on cast", "Summon the pet below each time you cast a fishing rod. Read from your own hook, no packets.",
+            pets.swapOnCast, last = false,
+        ) { PetSwap.edit { it.copy(swapOnCast = !it.swapOnCast) } }
+        val castId = "pet:castName"
+        y = actionRow(draw, y, "Cast pet", "Pet name as shown in /pets, for example Flying Fish.", last = pets.pets.isEmpty()) { cy ->
+            draw.field(castId, field(castId, pets.castPet), "Flying Fish", rightX(PET_FIELD_WIDTH), cy, PET_FIELD_WIDTH, focused == castId)
+        }
+        val removeW = draw.measure("Remove", draw.buttonFont) + 28
+        val bindW = draw.measure("Bind", draw.buttonFont) + 28
+        pets.pets.forEachIndexed { index, pet ->
+            val bindId = "petKey:$index"
+            val nameId = "pet:name:$index"
+            val keyText = if (capturingBind == bindId) "Press a key…" else keyLabel(pet.key)
+            y = actionRow(draw, y, "Pet ${index + 1}", keyText, last = index == pets.pets.lastIndex) { cy ->
+                val removeX = rightX(removeW)
+                val bindX = removeX - 8 - bindW
+                draw.button("Remove", removeX, cy, ButtonStyle.DANGER) {
+                    PetSwap.edit { it.withRemoved(index) }
+                    fields.keys.removeAll { it.startsWith("pet:name:") }
+                    if (capturingBind?.startsWith("petKey:") == true) capturingBind = null
+                }
+                draw.button("Bind", bindX, cy, ButtonStyle.PRIMARY) {
+                    capturingBind = bindId
+                    focused = null
+                    toast("press a key")
+                }
+                draw.field(nameId, field(nameId, pet.name), "Golden Dragon", bindX - 8 - PET_FIELD_WIDTH, cy, PET_FIELD_WIDTH, focused == nameId)
+            }
+        }
+        y = actionBar(draw, y + 4, "Add a pet") { cy ->
+            val newId = "pet:new"
+            val addW = draw.button("Add", rightX(draw.measure("Add", draw.buttonFont) + 28), cy, ButtonStyle.PRIMARY) {
+                val before = PetSwap.config.pets.size
+                PetSwap.edit { it.withAdded(field(newId)) }
+                if (PetSwap.config.pets.size > before) {
+                    fields[newId] = ""
+                    toast("pet added; press Bind to set its key")
+                }
+            }
+            draw.field(newId, field(newId), "Pet name", rightX(addW) - 8 - PET_FIELD_WIDTH, cy, PET_FIELD_WIDTH, focused == newId)
+        }
+        return note(
+            draw,
+            y,
+            "Type the pet's name as it shows in /pets, without the level (for example Golden Dragon). Keys only work with no screen open. Every press runs; the only check is inside the Pets menu, where a pet that is already out is left alone.",
+        )
     }
 
     private fun drawLeapRoute(draw: MenuDraw, startY: Int): Int {
@@ -829,15 +1049,12 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             }
         }
         y = section(draw, y + SECTION_GAP, "Quick leap", "Left-click Spirit Leap to open its menu and select the oriented target.")
-        y = grouped(draw, y, 4) { rowY, index ->
+        y = grouped(draw, y, 3) { rowY, index ->
             when (index) {
                 0 -> toggleRow(draw, rowY, "Left-click auto leap", "Uses the oriented target, without moving the cursor.", leap.autoLeapEnabled, false) {
                     TickTimers.updateLeap { it.copy(autoLeapEnabled = !it.autoLeapEnabled) }
                 }
-                1 -> toggleRow(draw, rowY, "Boss only", "Restrict oriented auto leap to dungeon boss fights.", leap.autoLeapBossOnly, false) {
-                    TickTimers.updateLeap { it.copy(autoLeapBossOnly = !it.autoLeapBossOnly) }
-                }
-                2 -> {
+                1 -> {
                     val id = "leap:autoDelay"
                     actionRow(draw, rowY, "Click delay (ms)", "Wait after the server opens the menu (0–2000).", last = false) { cy ->
                         draw.field(id, field(id, leap.autoLeapDelayMs.toString()), "100", rightX(48), cy, 48, focused == id)
@@ -863,6 +1080,18 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             val annId = "leap:announce"
             actionRow(draw, rowY, "Announce", "{class} or {name}. Others can use this as a trigger.", last = true) { cy ->
                 draw.field(annId, field(annId, leap.announceTemplate), LeapChatPatterns.DEFAULT_ANNOUNCE, rightX(220), cy, 220, focused == annId)
+            }
+        }
+        y = section(draw, y + SECTION_GAP, "Only in boss fight", "Keep Spirit Leap quiet outside dungeon boss fights.")
+        y = grouped(draw, y, 2) { rowY, index ->
+            if (index == 0) {
+                toggleRow(draw, rowY, "Cards", "Trigger cards fire only during a dungeon boss fight. Test still works anywhere.", leap.bossOnlyTriggers, false) {
+                    TickTimers.updateLeap { it.copy(bossOnlyTriggers = !it.bossOnlyTriggers) }
+                }
+            } else {
+                toggleRow(draw, rowY, "Auto leap", "Restrict oriented left-click auto leap to dungeon boss fights.", leap.autoLeapBossOnly, true) {
+                    TickTimers.updateLeap { it.copy(autoLeapBossOnly = !it.autoLeapBossOnly) }
+                }
             }
         }
         y = section(draw, y + SECTION_GAP, "Center priority", "Only used when two equal-priority locks overlap.")
@@ -970,10 +1199,26 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 draw.field(id, field(id, leap.menuOpacity.toString()), "100", rightX(48), cy, 48, focused == id)
             }
         }
-        y = grouped(draw, y, 2) { rowY, index ->
+        y = grouped(draw, y, 5) { rowY, index ->
             if (index == 0) {
                 toggleRow(draw, rowY, "Lock HUD", "Show who / zone / reason on screen, including the latest door opener.", leap.showLockHud, false) {
                     TickTimers.updateLeap { it.copy(showLockHud = !it.showLockHud) }
+                }
+            } else if (index == 1) {
+                actionRow(draw, rowY, "Move lock HUD", "Drag it where you want it. The two number rows below set the same offset.", last = false) { cy ->
+                    draw.button("Move", rightX(52), cy, ButtonStyle.PRIMARY) {
+                        McUi.setScreen(Minecraft.getInstance(), net.icantpy.dungeon.leap.LockHudEditorScreen())
+                    }
+                }
+            } else if (index == 2) {
+                val xId = "leap:lockHudX"
+                actionRow(draw, rowY, "Lock HUD X", "Pixels right (+) or left (-) of the default centered spot.", last = false) { cy ->
+                    draw.field(xId, field(xId, leap.lockHudX.toString()), "0", rightX(64), cy, 64, focused == xId)
+                }
+            } else if (index == 3) {
+                val yId = "leap:lockHudY"
+                actionRow(draw, rowY, "Lock HUD Y", "Pixels down (+) or up (-) from the default spot above the hotbar.", last = false) { cy ->
+                    draw.field(yId, field(yId, leap.lockHudY.toString()), "0", rightX(64), cy, 64, focused == yId)
                 }
             } else {
                 toggleRow(
@@ -1029,15 +1274,56 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
     }
 
+    /** The chat diagnostics switches. They stay reachable with debug off, since they also gate the [flow] chat lines. */
+    private fun drawChatDiagnostics(draw: MenuDraw, startY: Int, leap: LeapOrientSettings): Int {
+        var y = section(draw, startY, "Chat diagnostics", "Control the live party-chat trigger lines shown on the debug HUD.")
+        y = grouped(draw, y, 3) { rowY, index ->
+            when (index) {
+                0 -> toggleRow(
+                    draw,
+                    rowY,
+                    "Chat debug HUD",
+                    "Show the recent chat trigger history below the state.",
+                    leap.showChatDebugHud,
+                    false,
+                ) {
+                    TickTimers.updateLeap { it.copy(showChatDebugHud = !it.showChatDebugHud) }
+                }
+                1 -> toggleRow(
+                    draw,
+                    rowY,
+                    "Trigger chat messages",
+                    "Print LOCK, SKIP and [flow] diagnostics into Minecraft chat.",
+                    leap.showChatDebugMessages,
+                    false,
+                ) {
+                    TickTimers.updateLeap { it.copy(showChatDebugMessages = !it.showChatDebugMessages) }
+                }
+                else -> toggleRow(
+                    draw,
+                    rowY,
+                    "Show skipped chats",
+                    "Include messages that did not arm a lock in enabled diagnostics.",
+                    leap.showChatDebugSkips,
+                    true,
+                ) {
+                    TickTimers.updateLeap { it.copy(showChatDebugSkips = !it.showChatDebugSkips) }
+                }
+            }
+        }
+        return y
+    }
+
     private fun drawLeapDebug(draw: MenuDraw, startY: Int): Int {
+        DebugUiMemory.ensureLoaded()
         val helpY = pageHelp(draw, startY, "Simulate the live party-chat and boss event pipeline.")
         if (!TickTimers.settings.debugMode && !LeapOrient.debugActive()) {
-            return note(draw, helpY, "Turn on debug mode to simulate the live event pipeline.")
+            val noteY = note(draw, helpY, "Turn on debug mode to simulate the live event pipeline.")
+            return drawChatDiagnostics(draw, noteY + SECTION_GAP, TickTimers.settings.leap)
         }
         val leap = TickTimers.settings.leap
-        var bossDropdown: Triple<Int, Int, Int>? = null
         var partyDropdown: Triple<Int, Int, Int>? = null
-        var y = grouped(draw, startY, 4) { rowY, index ->
+        var y = grouped(draw, helpY, 4) { rowY, index ->
             when (index) {
                 0 -> actionRow(draw, rowY, "Game state", LeapGameState.currentId(), last = false) { cy ->
                     var x = rightX(0)
@@ -1062,27 +1348,26 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         y = grouped(draw, y, 2) { rowY, index ->
             when (index) {
-                0 -> actionRow(draw, rowY, "Boss events", "Chat line → eligibility → lock.", last = false) { cy ->
-                    val options = listOf(
-                        "Relic pickup" to "relic-pickup",
-                        "Necron die" to "necron-die",
-                        "Goldor die" to "goldor-die",
-                        "Core" to "core",
-                        "Goldor" to "goldor",
-                        "Storm die" to "storm",
-                        "Maxor die" to "maxor",
-                    )
-                    val selected = options.indexOfFirst { it.second == debugBossToken }.coerceAtLeast(0)
-                    val label = options[selected].first
+                0 -> actionRow(draw, rowY, "Boss and action events", "Every trigger event. Boss lines go through chat; the rest fire as the game would.", last = false) { cy ->
+                    val events = LeapTriggerEvent.entries.filter { it != LeapTriggerEvent.CHAT_MESSAGE }
+                    val label = debugBossEvent.label()
                     val runW = draw.button("Run", rightX(52), cy, ButtonStyle.PRIMARY) {
-                        toast(LeapOrient.simulateBossToken(debugBossToken))
+                        toast(LeapOrient.simulateBossEvent(debugBossEvent))
                     }
-                    val selectW = draw.measure(label, draw.buttonFont) + 48
+                    val titleEnd = innerLeft() + 18 + draw.measure("Boss and action events", draw.bodyFont) + 16
+                    val selectW = (draw.measure(label, draw.buttonFont).coerceAtLeast(120) + 48)
+                        .coerceAtMost(rightX(52) - runW - 8 - titleEnd)
+                        .coerceAtLeast(96)
                     val selectX = rightX(52) - runW - 8 - selectW
-                    draw.selectButton(label, selectX, cy, selectW, LEAP_ROW_CONTROL_HEIGHT) {
-                        openDebugDropdown = if (openDebugDropdown == "boss") null else "boss"
-                    }
-                    bossDropdown = Triple(selectX, cy + 24, selectW)
+                    leapSelect(
+                        draw,
+                        "debug-boss",
+                        label,
+                        events.map { it.label() },
+                        events.indexOf(debugBossEvent).coerceAtLeast(0),
+                        LayoutRect(selectX, cy, selectW, LEAP_ROW_CONTROL_HEIGHT),
+                        leapEventHeaders(events),
+                    ) { choice -> debugBossEvent = events[choice] }
                 }
                 else -> actionRow(draw, rowY, "Party / leaped", "Ping sender or leaped-to-sender custom triggers.", last = true) { cy ->
                     val options = listOf(
@@ -1130,41 +1415,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y + SECTION_GAP, "Chat diagnostics", "Control the live party-chat trigger lines shown on the debug HUD.")
-        y = grouped(draw, y, 3) { rowY, index ->
-            when (index) {
-                0 -> toggleRow(
-                    draw,
-                    rowY,
-                    "Chat debug HUD",
-                    "Show the recent chat trigger history below the state.",
-                    leap.showChatDebugHud,
-                    false,
-                ) {
-                    TickTimers.updateLeap { it.copy(showChatDebugHud = !it.showChatDebugHud) }
-                }
-                1 -> toggleRow(
-                    draw,
-                    rowY,
-                    "Trigger chat messages",
-                    "Print LOCK and optional SKIP diagnostics into Minecraft chat.",
-                    leap.showChatDebugMessages,
-                    false,
-                ) {
-                    TickTimers.updateLeap { it.copy(showChatDebugMessages = !it.showChatDebugMessages) }
-                }
-                else -> toggleRow(
-                    draw,
-                    rowY,
-                    "Show skipped chats",
-                    "Include messages that did not arm a lock in enabled diagnostics.",
-                    leap.showChatDebugSkips,
-                    true,
-                ) {
-                    TickTimers.updateLeap { it.copy(showChatDebugSkips = !it.showChatDebugSkips) }
-                }
-            }
-        }
+        y = drawChatDiagnostics(draw, y + SECTION_GAP, leap)
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Preview menu", "Opens the debug Spirit Leap overlay.", last = true) { cy ->
                 val itemW = draw.button("Item", rightX(52), cy, ButtonStyle.GHOST) {
@@ -1175,18 +1426,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        if (openDebugDropdown == "boss") {
-            bossDropdown?.let { (x, anchorY, width) ->
-                val options = listOf("Relic pickup", "Necron die", "Goldor die", "Core", "Goldor", "Storm die", "Maxor die")
-                val selected = listOf("relic-pickup", "necron-die", "goldor-die", "core", "goldor", "storm", "maxor")
-                    .indexOf(debugBossToken)
-                    .coerceAtLeast(0)
-                draw.dropdownMenu(x, anchorY, width, options, selected) { index ->
-                    debugBossToken = listOf("relic-pickup", "necron-die", "goldor-die", "core", "goldor", "storm", "maxor")[index]
-                    openDebugDropdown = null
-                }
-            }
-        } else if (openDebugDropdown == "party") {
+        if (openDebugDropdown == "party") {
             partyDropdown?.let { (x, anchorY, width) ->
                 val options = listOf("Archer ping", "Bers ping", "Healer ping", "Mage ping", "Tank ping", "Leaped me", "Sender scene")
                 val selected = listOf("arch", "bers", "heal", "mage", "tank", "leaped", "sender")
@@ -1249,12 +1489,15 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             when (index) {
                 0 -> actionRow(draw, rowY, "Event and value", "Value is optional; the event label is used when blank.", last = false) { cy ->
                     val shown = debugFireEvent.label()
-                    val selectW = draw.measure(shown, draw.buttonFont).coerceAtLeast(120) + 48
                     val valueW = 140
+                    val titleEnd = innerLeft() + 18 + draw.measure("Event and value", draw.bodyFont) + 16
+                    val selectW = (draw.measure(shown, draw.buttonFont).coerceAtLeast(120) + 48)
+                        .coerceAtMost(rightX(0) - valueW - 8 - titleEnd)
+                        .coerceAtLeast(96)
                     val selectX = rightX(0) - selectW - 8 - valueW
                     draw.field(
                         "debug:fire:value",
-                        field("debug:fire:value"),
+                        field("debug:fire:value", DebugUiMemory.fireValue),
                         "value",
                         selectX + selectW + 8,
                         cy,
@@ -1273,13 +1516,14 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                     ) { choice -> debugFireEvent = events[choice] }
                 }
                 else -> actionRow(draw, rowY, "Fire", "Honors card filters, or ignores match text for every card.", last = true) { cy ->
-                    val value = field("debug:fire:value")
-                    val all = draw.button("Ignore filters", rightX(120), cy, ButtonStyle.GHOST) {
-                        toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = false))
-                    }
-                    draw.button("Fire", rightX(120) - all - 8, cy, ButtonStyle.PRIMARY) {
-                        toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = true))
-                    }
+                    val value = field("debug:fire:value", DebugUiMemory.fireValue).also { DebugUiMemory.fireValue = it }
+                    buttonsRight(
+                        draw, cy,
+                        listOf(
+                            Triple("Fire", ButtonStyle.PRIMARY) { toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = true)) },
+                            Triple("Ignore filters", ButtonStyle.GHOST) { toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = false)) },
+                        ),
+                    )
                 }
             }
         }
@@ -1402,6 +1646,8 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 .filter { (_, step) -> step.kind == LeapAutoKind.MARK_PLAYER && LeapMarkRouter.styleOf(step) == MarkerStyle.ARROW }
                 .map { (index, _) -> index }
                 .toSet(),
+            stepBranches = trigger.steps.withIndex().associate { (index, step) -> index to step.branch },
+            stepTermCounts = trigger.steps.withIndex().associate { (index, step) -> index to step.conditions.size },
         )
     }
 
@@ -1510,6 +1756,8 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 drawFollowRow(edit, slot.row, slot.step, control)
             LeapCardRow.TIMER, LeapCardRow.SECONDS, LeapCardRow.METRIC, LeapCardRow.CLOCK_WHEN ->
                 drawClockRow(edit, slot.row, control)
+            LeapCardRow.STEP_BRANCH, LeapCardRow.STEP_COND, LeapCardRow.STEP_COND_ADD, LeapCardRow.STEP_REQUIRES ->
+                drawBranchRow(edit, slot, control)
             else -> drawFilterRow(edit, slot.row, control)
         }
     }
@@ -1522,6 +1770,11 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             "${slot.step + 1}."
         }
         LeapCardRow.ADD_STEP -> if (slot.step == 0) slot.row.label else ""
+        LeapCardRow.STEP_COND -> if (slot.term == 0) {
+            edit.latest().steps.getOrNull(slot.step)?.branch?.label ?: "If"
+        } else {
+            ""
+        }
         else -> slot.row.label
     }
 
@@ -1667,7 +1920,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private fun drawStepRow(edit: LeapCardEdit, index: Int, control: LayoutRect) {
         val step = edit.latest().steps.getOrNull(index) ?: return
         val count = edit.latest().steps.size
-        val parts = LeapTriggerLayout.stepControls(control)
+        // The label column only holds the step number, so the pickers take most of it and long names stay readable.
+        val reclaimed = LeapTriggerLayout.LABEL_WIDTH + LeapTriggerLayout.LABEL_GAP - LeapTriggerLayout.STEP_NUMBER_WIDTH
+        val wide = LayoutRect(control.x - reclaimed, control.y, control.w + reclaimed, control.h)
+        val parts = LeapTriggerLayout.stepControls(wide)
         val draw = edit.draw
         draw.selectButton(step.kind.label, parts.kind.x, parts.kind.y, parts.kind.w, parts.kind.h) {
             val next = LeapAutoStep.nextKind(step.kind, index, edit.latest().steps)
@@ -1754,6 +2010,86 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             draw.palette.secondary,
             draw.smallFont,
         )
+    }
+
+    /**
+     * Rows every action has. Run picks the branch role (Always, If, Else if, Else); each condition term is one row of
+     * [join][is / NOT][fact][value][remove]; Requires waits for a leap to a class before the row runs.
+     */
+    private fun drawBranchRow(edit: LeapCardEdit, slot: LeapCardSlot, c: LayoutRect) {
+        val index = slot.step
+        val step = edit.latest().steps.getOrNull(index) ?: return
+        when (slot.row) {
+            LeapCardRow.STEP_BRANCH -> {
+                val branches = LeapConditions.allowedBranches(edit.latest().steps, index)
+                val options = branches.map { branchLabel(it) }
+                followSelect(edit, slot.row, index, c, options, branches.indexOf(step.branch).coerceAtLeast(0)) { i ->
+                    editStep(edit, index) { current ->
+                        val seeded = if (branches[i].hasCondition && current.conditions.isEmpty()) {
+                            listOf(newTerm(LeapFact.LOADOUT))
+                        } else {
+                            current.conditions
+                        }
+                        current.copy(branch = branches[i], conditions = seeded)
+                    }
+                }
+            }
+            LeapCardRow.STEP_COND -> drawCondTerm(edit, index, slot.term, step, c)
+            LeapCardRow.STEP_COND_ADD -> {
+                val button = LayoutRect(c.x, c.y, minOf(c.w, ADD_ACTION_BUTTON_WIDTH + 20), c.h)
+                edit.draw.inlineButton("+ Add condition", button) {
+                    val fact = if (step.conditions.isEmpty()) LeapFact.LOADOUT else LeapFact.MY_CLASS
+                    editStep(edit, index) { it.copy(conditions = it.conditions + newTerm(fact)) }
+                }
+            }
+            else -> {
+                val labels = listOf("None") + LeapDungeonClass.PLAYABLE.map { "After leap to ${it.displayName}" }
+                followSelect(edit, slot.row, index, c, labels, optionalClassIndex(step.requires)) { i ->
+                    editStep(edit, index) { it.copy(requires = optionalClassAt(i)) }
+                }
+            }
+        }
+    }
+
+    private fun branchLabel(branch: LeapBranch): String = when (branch) {
+        LeapBranch.ALWAYS -> "Always"
+        LeapBranch.IF -> "If (condition)"
+        LeapBranch.ELSE_IF -> "Else if (condition)"
+        LeapBranch.ELSE -> "Else"
+    }
+
+    private fun newTerm(fact: LeapFact): LeapTerm = LeapTerm(fact, LeapConditions.defaultValue(fact))
+
+    private fun drawCondTerm(edit: LeapCardEdit, index: Int, termIndex: Int, step: LeapAutoStep, c: LayoutRect) {
+        val term = step.conditions.getOrNull(termIndex) ?: return
+        val draw = edit.draw
+        val parts = LeapTriggerLayout.condControls(c, hasJoin = termIndex > 0)
+        fun editTerm(change: (LeapTerm) -> LeapTerm) = editStep(edit, index) { current ->
+            current.copy(conditions = current.conditions.mapIndexed { i, t -> if (i == termIndex) change(t) else t })
+        }
+        parts.join?.let { rect ->
+            draw.selectButton(term.join.label, rect.x, rect.y, rect.w, rect.h) { editTerm { it.copy(join = it.join.other()) } }
+        }
+        draw.selectButton(if (term.negate) "NOT" else "is", parts.not.x, parts.not.y, parts.not.w, parts.not.h) {
+            editTerm { it.copy(negate = !it.negate) }
+        }
+        val facts = LeapFact.entries
+        leapSelect(
+            draw, "leap-select:${edit.id}:cond-fact:$index:$termIndex", term.fact.label, facts.map { it.label },
+            facts.indexOf(term.fact), parts.fact, emptyMap(),
+        ) { i -> editTerm { it.copy(fact = facts[i], value = LeapConditions.defaultValue(facts[i])) } }
+        val choices = LeapConditions.choices(term.fact)
+        val selected = choices.indexOfFirst { it.first.equals(term.value, ignoreCase = true) }
+        leapSelect(
+            draw, "leap-select:${edit.id}:cond-value:$index:$termIndex", LeapConditions.valueLabel(term.fact, term.value),
+            choices.map { it.second }, selected.coerceAtLeast(0), parts.value, emptyMap(),
+        ) { i -> editTerm { it.copy(value = choices[i].first) } }
+        draw.stepIconButton(parts.remove, StepGlyph.REMOVE, enabled = true) {
+            editStep(edit, index) { current ->
+                val left = current.conditions.filterIndexed { i, _ -> i != termIndex }
+                current.copy(conditions = left, branch = if (left.isEmpty() && current.branch.hasCondition) LeapBranch.ALWAYS else current.branch)
+            }
+        }
     }
 
     private fun drawStepValue(edit: LeapCardEdit, index: Int, step: LeapAutoStep, c: LayoutRect) {
@@ -2073,6 +2409,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             LeapCardRow.SECTION -> leapSelectRow(edit, row, c, LEAP_SECTION_LABELS, trigger.section.coerceIn(0, 4)) { index ->
                 edit.save(edit.latest().copy(section = index))
             }
+            LeapCardRow.BOSS_ONLY -> leapSelectRow(edit, row, c, listOf("Any time", "Only in boss fight"), if (trigger.bossOnly) 1 else 0) { index ->
+                edit.save(edit.latest().copy(bossOnly = index == 1))
+            }
             LeapCardRow.TARGET_NAME -> leapField(edit, "lt:${edit.id}:name", trigger.targetValue, "player", c)
             LeapCardRow.TARGET_INFO -> leapReadOnly(edit.draw, c, "Uses the player captured by the event.")
             LeapCardRow.ZONE -> leapField(edit, "lt:${edit.id}:zone", trigger.zone, "SS", c)
@@ -2181,6 +2520,21 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun applyBind(id: String, code: Int) {
+        if (id == "fishKey") {
+            val key = if (code <= 0) FishingMacroConfig.UNBOUND else code
+            FishingMacro.edit { it.copy(key = key) }
+            return
+        }
+        if (id.startsWith("petKey:")) {
+            val index = id.removePrefix("petKey:").toIntOrNull() ?: return
+            val key = if (code <= 0) PetSwapConfig.UNBOUND else code
+            PetSwap.edit { config -> config.withPet(index) { it.copy(key = key) } }
+            return
+        }
+        if (id == "freecamKey") {
+            Freecam.edit { it.copy(key = if (code <= 0) FreecamConfig.UNBOUND else code) }
+            return
+        }
         if (id == "freelookKey") {
             Freelook.setKey(code)
             return
@@ -2269,11 +2623,36 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        return note(
+        y = note(
             draw,
             y,
             "Options → Controls → icantpy → Freelook. Hold: look while the key is down. Toggle: tap on, tap off. Hold or toggle: tap latches, a longer press peeks until you release.",
         )
+        return drawFreecam(draw, y)
+    }
+
+    private fun drawFreecam(draw: MenuDraw, startY: Int): Int {
+        val cam = Freecam.config
+        var y = section(
+            draw,
+            startY + SECTION_GAP,
+            "Freecam",
+            "Fly the camera away from your character. The character stands still and sends what an idle player sends; only the picture moves. You only see chunks and entities the server already sent. WASD fly, Space up, Shift down, Sprint is faster.",
+        )
+        y = toggleRow(draw, y, "Enabled", "Allow the freecam key below.", cam.enabled, last = false) {
+            Freecam.edit { it.copy(enabled = !it.enabled) }
+        }
+        y = bindRow(draw, y, "Toggle key", "freecamKey", cam.key, last = false)
+        val speedId = "freecam:speed"
+        y = actionRow(draw, y, "Speed (blocks/s)", "Fly speed; Sprint triples it.", last = false) { cy ->
+            draw.field(speedId, field(speedId, cam.speed.toString()), "15", rightX(64), cy, 64, focused == speedId)
+        }
+        y = toggleRow(draw, y, "Block clicks", "Attack and use are ignored while flying, so nothing is hit by accident.", cam.blockClicks, last = false) {
+            Freecam.edit { it.copy(blockClicks = !it.blockClicks) }
+        }
+        return toggleRow(draw, y, "Stop when hurt", "Leaves freecam as soon as you take damage.", cam.stopOnHurt, last = true) {
+            Freecam.edit { it.copy(stopOnHurt = !it.stopOnHurt) }
+        }
     }
 
     /** One on/off setting on a Visuals subtab. [read] and [write] take the live config, so clicks never use a stale copy. */
@@ -2325,6 +2704,36 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return y + 8
     }
 
+    /**
+     * Chips drawn right to left. When they would reach the row title on the left, their padding and then their gaps
+     * shrink until they fit, so a row never prints over its own label.
+     */
+    private fun chipsRight(draw: MenuDraw, cy: Int, title: String, labels: List<String>, selected: (Int) -> Boolean, onPick: (Int) -> Unit) {
+        val minX = innerLeft() + 18 + draw.measure(title, draw.bodyFont) + 20
+        val room = rightX(0) - minX
+        var pad = 24
+        var gap = 6
+        fun total() = labels.sumOf { draw.measure(it, draw.buttonFont) + pad } + gap * labels.size
+        while (total() > room && pad > 8) pad -= 2
+        while (total() > room && gap > 2) gap--
+        var x = rightX(0)
+        labels.indices.reversed().forEach { index ->
+            x -= draw.measure(labels[index], draw.buttonFont) + pad
+            draw.chip(labels[index], x, cy, selected(index), pad - 2) { onPick(index) }
+            x -= gap
+        }
+    }
+
+    /** Buttons drawn right to left from the row's right edge, listed in the order they should read. */
+    private fun buttonsRight(draw: MenuDraw, cy: Int, buttons: List<Triple<String, ButtonStyle, () -> Unit>>, edge: Int = rightX(0)) {
+        var x = edge
+        buttons.asReversed().forEach { (label, style, action) ->
+            x -= draw.measure(label, draw.buttonFont) + 28
+            draw.button(label, x, cy, style, action)
+            x -= 8
+        }
+    }
+
     /** A row of chips; [selected] is highlighted, -1 for none. */
     private fun visualChipRow(
         draw: MenuDraw,
@@ -2336,12 +2745,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         last: Boolean,
         onPick: (Int) -> Unit,
     ): Int = actionRow(draw, y, title, subtitle, last) { cy ->
-        var x = rightX(0)
-        labels.indices.reversed().forEach { index ->
-            x -= draw.measure(labels[index], draw.buttonFont) + 24
-            draw.chip(labels[index], x, cy, index == selected) { onPick(index) }
-            x -= 6
-        }
+        chipsRight(draw, cy, title, labels, { it == selected }, onPick)
     }
 
     /**
@@ -2461,7 +2865,34 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             nearestIndex(fogScales, c.fogDistance),
             true,
         ) { index -> Visuals.edit { it.copy(fogDistance = fogScales[index]) } }
-        return y + 8
+        return drawLavaEsp(draw, y + 8)
+    }
+
+    private fun drawLavaEsp(draw: MenuDraw, startY: Int): Int {
+        val lava = LavaEsp.config
+        var y = section(
+            draw,
+            startY,
+            "Lava highlight",
+            "Outlines lava above a height in the chunks the server already sent. Only your client's loaded chunks are read, so nothing is requested.",
+        )
+        y = toggleRow(draw, y, "Enabled", "Highlight lava blocks.", lava.enabled, last = false) {
+            LavaEsp.edit { it.copy(enabled = !it.enabled) }
+        }
+        y = toggleRow(draw, y, "Surface only", "Skip lava that has lava above it, so a pool shows its top layer.", lava.surfaceOnly, last = false) {
+            LavaEsp.edit { it.copy(surfaceOnly = !it.surfaceOnly) }
+        }
+        y = toggleRow(draw, y, "See through walls", "Draw the outlines on top of terrain, so lava shows behind walls and under floors.", lava.throughWalls, last = false) {
+            LavaEsp.edit { it.copy(throughWalls = !it.throughWalls) }
+        }
+        val minId = "lava:minY"
+        y = actionRow(draw, y, "Above height (Y)", "Only lava higher than this Y is shown.", last = false) { cy ->
+            draw.field(minId, field(minId, lava.minY.toString()), "64", rightX(64), cy, 64, focused == minId)
+        }
+        val radiusId = "lava:radius"
+        return actionRow(draw, y, "Radius (chunks)", "How far around you loaded chunks are scanned. " + LavaEsp.count() + " blocks shown.", last = true) { cy ->
+            draw.field(radiusId, field(radiusId, lava.radiusChunks.toString()), "8", rightX(64), cy, 64, focused == radiusId)
+        }
     }
 
     private fun drawVisualsCamera(draw: MenuDraw, startY: Int): Int {
@@ -2903,14 +3334,14 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Single ability slot", "Hotbar slot 1-9 for the plain Q ability.", last = true) { cy ->
-                slotChips(draw, cy, settings.slot) { value ->
+                slotChips(draw, cy, "Single ability slot", settings.slot) { value ->
                     TickTimers.updateDropUltimate { it.copy(slot = value) }
                 }
             }
         }
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Stack ability slot", "Hotbar slot 1-9 for the Ctrl+Q and stack-key ability.", last = true) { cy ->
-                slotChips(draw, cy, settings.stackSlot) { value ->
+                slotChips(draw, cy, "Stack ability slot", settings.stackSlot) { value ->
                     TickTimers.updateDropUltimate { it.copy(stackSlot = value) }
                 }
             }
@@ -2931,14 +3362,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return y
     }
 
-    private fun slotChips(draw: MenuDraw, cy: Int, selected: Int, onSelect: (Int) -> Unit) {
-        var x = rightX(0)
-        (DropUltimateSettings.MAX_SLOT downTo DropUltimateSettings.MIN_SLOT).forEach { value ->
-            val label = value.toString()
-            x -= draw.measure(label, draw.buttonFont) + 24
-            draw.chip(label, x, cy, selected == value) { onSelect(value) }
-            x -= 6
-        }
+    private fun slotChips(draw: MenuDraw, cy: Int, title: String, selected: Int, onSelect: (Int) -> Unit) {
+        val slots = (DropUltimateSettings.MIN_SLOT..DropUltimateSettings.MAX_SLOT).toList()
+        chipsRight(draw, cy, title, slots.map { it.toString() }, { slots[it] == selected }) { onSelect(slots[it]) }
     }
 
     private fun drawCarriesCounter(draw: MenuDraw, startY: Int): Int {
@@ -3021,27 +3447,13 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         val helpY = pageHelp(draw, warnY, "Smoothly turns your camera toward your own slayer boss with curved, never-instant motion.")
         var y = infoRow(draw, helpY, "Status", if (BossAim.engaged()) "Aiming" else "Idle", last = false)
         y += 8
-        y = section(draw, y, "Activation", "Hold left click, hold a key, or toggle a key to start aiming.")
-        val activations = AimActivation.entries
-        y = visualChipRow(
-            draw, y, "Activation", "What starts aiming at the boss.",
-            activations.map { it.label }, activations.indexOf(c.activation), last = false,
-        ) { index -> BossAim.edit { it.copy(activation = activations[index]) } }
-        y = section(draw, y, "Aim key", "Used by Hold key and Toggle key. Escape unbinds.")
-        y = bindRow(draw, y, "Aim key", "aimKey", c.key, last = false)
+        y = drawAimActivation(draw, y, c)
         y += 8
-        y = section(draw, y, "Lazy aim", "Aim at a drifting point inside the hitbox instead of locking onto its center.")
-        y = toggleRow(draw, y, "Lazy aim", "Drift around inside the hitbox.", c.lazyAim, last = false) {
-            BossAim.edit { it.copy(lazyAim = !it.lazyAim) }
-        }
-        y = toggleRow(
-            draw, y, "Dead zone", "Don't correct while the crosshair is already on the target.", c.lazyDeadzone,
-            last = false,
-        ) { BossAim.edit { it.copy(lazyDeadzone = !it.lazyDeadzone) } }
-        y = sliderRow(
-            draw, y, "Drift", "How far from the aim point the lazy point may wander, as a share of the hitbox.",
-            c.lazyStrength, 0f, 1f, 0.05f, last = false, format = { "${(it * 100).toInt()}%" },
-        ) { v -> BossAim.edit { it.copy(lazyStrength = v) } }
+        y = drawAimLazy(draw, y, c)
+        y += 8
+        y = drawAimMotion(draw, y, c)
+        y += 8
+        y = drawAimTargeting(draw, y, c, AimPageKind.SLAYER)
         y += 8
         y = section(
             draw, y, "S-tap",
@@ -3066,6 +3478,56 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         )
         y = bindRow(draw, y, "Lock-on key", "aimLockKey", c.lockKey, last = false)
         y += 8
+        y = section(draw, y, "Extra targets", "Name fragments matched against mob and hologram names, for other bosses.")
+        y = actionRow(draw, y, "Extra targets", "Editing comes later.", last = true) { cy ->
+            val clearX = rightX(72)
+            draw.button("Clear", clearX, cy, ButtonStyle.GHOST) {
+                BossAim.edit { it.copy(extraTargets = emptyList()) }
+            }
+            val listX = innerLeft() + 180
+            val raw = if (c.extraTargets.isEmpty()) "none" else c.extraTargets.joinToString(", ")
+            val text = draw.fit(raw, clearX - 14 - listX, draw.smallFont)
+            draw.text(text, listX, cy + 6, draw.palette.secondary, draw.smallFont)
+        }
+        return y
+    }
+
+
+    /** Which feature an aim settings block is drawn for; blood aim has no hitbox, so it skips the hitbox rows. */
+    private enum class AimPageKind { SLAYER, BLOOD, LIVID }
+
+    private fun drawAimActivation(draw: MenuDraw, startY: Int, c: AimConfig): Int {
+        var y = startY
+        y = section(draw, y, "Activation", "Hold left click, hold a key, or toggle a key to start aiming.")
+        val activations = AimActivation.entries
+        y = visualChipRow(
+            draw, y, "Activation", "What starts aiming at the boss.",
+            activations.map { it.label }, activations.indexOf(c.activation), last = false,
+        ) { index -> BossAim.edit { it.copy(activation = activations[index]) } }
+        y = section(draw, y, "Aim key", "Used by Hold key and Toggle key. Escape unbinds.")
+        y = bindRow(draw, y, "Aim key", "aimKey", c.key, last = false)
+        return y
+    }
+
+    private fun drawAimLazy(draw: MenuDraw, startY: Int, c: AimConfig): Int {
+        var y = startY
+        y = section(draw, y, "Lazy aim", "Aim at a drifting point inside the hitbox instead of locking onto its center.")
+        y = toggleRow(draw, y, "Lazy aim", "Drift around inside the hitbox.", c.lazyAim, last = false) {
+            BossAim.edit { it.copy(lazyAim = !it.lazyAim) }
+        }
+        y = toggleRow(
+            draw, y, "Dead zone", "Don't correct while the crosshair is already on the target.", c.lazyDeadzone,
+            last = false,
+        ) { BossAim.edit { it.copy(lazyDeadzone = !it.lazyDeadzone) } }
+        y = sliderRow(
+            draw, y, "Drift", "How far from the aim point the lazy point may wander, as a share of the hitbox.",
+            c.lazyStrength, 0f, 1f, 0.05f, last = false, format = { "${(it * 100).toInt()}%" },
+        ) { v -> BossAim.edit { it.copy(lazyStrength = v) } }
+        return y
+    }
+
+    private fun drawAimMotion(draw: MenuDraw, startY: Int, c: AimConfig): Int {
+        var y = startY
         y = section(draw, y, "Motion", "How fast the camera turns and how long one turn may take.")
         y = sliderRow(
             draw, y, "Speed", "Maximum turn speed in degrees per second.",
@@ -3099,46 +3561,75 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 BossAim.edit { it.copy(easing = next) }
             }
         }
-        y += 8
-        y = section(draw, y, "Targeting", "Which point on the boss to aim at, and which targets count.")
-        val points = AimPoint.entries
-        y = visualChipRow(
-            draw, y, "Aim point", "Where on the target the camera settles.",
-            points.map { it.label }, points.indexOf(c.aimPoint), last = false,
-        ) { index -> BossAim.edit { it.copy(aimPoint = points[index]) } }
-        y = sliderRow(
-            draw, y, "Range", "Targets farther than this, in blocks, are ignored.",
-            c.maxRange, AimConfig.MIN_MAX_RANGE, AimConfig.MAX_MAX_RANGE, 1f, last = false, format = { "${it.toInt()} blocks" },
-        ) { v -> BossAim.edit { it.copy(maxRange = v) } }
+        return y
+    }
+
+    private fun drawAimTargeting(draw: MenuDraw, startY: Int, c: AimConfig, kind: AimPageKind): Int {
+        var y = section(draw, startY, "Targeting", "What counts as a target and how it is shown.")
+        if (kind != AimPageKind.BLOOD) {
+            val points = AimPoint.entries
+            y = visualChipRow(
+                draw, y, "Aim point", "Where on the target the camera settles.",
+                points.map { it.label }, points.indexOf(c.aimPoint), last = false,
+            ) { index -> BossAim.edit { it.copy(aimPoint = points[index]) } }
+            y = sliderRow(
+                draw, y, "Range", "Targets farther than this, in blocks, are ignored.",
+                c.maxRange, AimConfig.MIN_MAX_RANGE, AimConfig.MAX_MAX_RANGE, 1f, last = false, format = { "${it.toInt()} blocks" },
+            ) { v -> BossAim.edit { it.copy(maxRange = v) } }
+        }
         y = sliderRow(
             draw, y, "FOV", "Targets outside this cone around the crosshair are ignored.",
             c.fovLimit, AimConfig.MIN_FOV_LIMIT, AimConfig.MAX_FOV_LIMIT, 5f, last = false, format = { "${it.toInt()}°" },
         ) { v -> BossAim.edit { it.copy(fovLimit = v) } }
-        y = toggleRow(draw, y, "Own slayer boss", "Aim at your own slayer boss.", c.ownSlayerBoss, last = false) {
-            BossAim.edit { it.copy(ownSlayerBoss = !it.ownSlayerBoss) }
+        if (kind == AimPageKind.SLAYER) {
+            y = toggleRow(draw, y, "Own slayer boss", "Aim at your own slayer boss.", c.ownSlayerBoss, last = false) {
+                BossAim.edit { it.copy(ownSlayerBoss = !it.ownSlayerBoss) }
+            }
         }
-        y = toggleRow(draw, y, "Require line of sight", "Only aim at targets you can see.", c.requireLineOfSight, last = false) {
-            BossAim.edit { it.copy(requireLineOfSight = !it.requireLineOfSight) }
+        if (kind != AimPageKind.BLOOD) {
+            y = toggleRow(draw, y, "Require line of sight", "Only aim at targets you can see.", c.requireLineOfSight, last = false) {
+                BossAim.edit { it.copy(requireLineOfSight = !it.requireLineOfSight) }
+            }
         }
         y = toggleRow(draw, y, "Highlight target", "Mark the target that is being aimed at.", c.highlightTarget, last = false) {
             BossAim.edit { it.copy(highlightTarget = !it.highlightTarget) }
         }
-        y += 8
-        y = section(draw, y, "Extra targets", "Name fragments matched against mob and hologram names, for other bosses.")
-        y = actionRow(draw, y, "Extra targets", "Editing comes later.", last = true) { cy ->
-            val clearX = rightX(72)
-            draw.button("Clear", clearX, cy, ButtonStyle.GHOST) {
-                BossAim.edit { it.copy(extraTargets = emptyList()) }
-            }
-            val listX = innerLeft() + 180
-            val raw = if (c.extraTargets.isEmpty()) "none" else c.extraTargets.joinToString(", ")
-            val text = draw.fit(raw, clearX - 14 - listX, draw.smallFont)
-            draw.text(text, listX, cy + 6, draw.palette.secondary, draw.smallFont)
-        }
         return y
     }
 
-    private fun drawFirePits(draw: MenuDraw, startY: Int): Int {
+    private fun drawBloodHelper(draw: MenuDraw, startY: Int): Int {
+        val c = BossAim.config()
+        val warnY = note(draw, startY, "Turns your camera for you. Aim assistance can be against server rules — use at your own risk.")
+        val helpY = pageHelp(draw, warnY, "Turns your camera toward the box where each blood mob is predicted to drop, like the Odin and NoammAddons blood camp boxes. Works in the blood room only.")
+        var y = infoRow(draw, helpY, "Status", if (BossAim.engaged()) "Aiming" else "Idle", last = false)
+        y = note(draw, y, "The aim settings below are shared with Aim Assist and Livid Helper. Prediction needs a moment of the mob moving before its box is trusted.")
+        y += 8
+        y = drawAimActivation(draw, y, c)
+        y += 8
+        y = drawAimMotion(draw, y, c)
+        y += 8
+        y = drawAimTargeting(draw, y, c, AimPageKind.BLOOD)
+        return y
+    }
+
+    private fun drawLividHelper(draw: MenuDraw, startY: Int): Int {
+        val c = BossAim.config()
+        val warnY = note(draw, startY, "Turns your camera for you. Aim assistance can be against server rules — use at your own risk.")
+        val helpY = pageHelp(draw, warnY, "Turns your camera toward the real Livid in the F5 and M5 boss room, found from the colour of the ceiling wool.")
+        var y = infoRow(draw, helpY, "Status", if (BossAim.engaged()) "Aiming" else "Idle", last = false)
+        y = note(draw, y, "The aim settings below are shared with Aim Assist and Blood Helper.")
+        y += 8
+        y = drawAimActivation(draw, y, c)
+        y += 8
+        y = drawAimLazy(draw, y, c)
+        y += 8
+        y = drawAimMotion(draw, y, c)
+        y += 8
+        y = drawAimTargeting(draw, y, c, AimPageKind.LIVID)
+        return y
+    }
+
+    private fun drawBlazeFire(draw: MenuDraw, startY: Int): Int {
         val c = FirePit.config()
         val helpY = pageHelp(draw, startY, "Watches the blocks around you during the Inferno Demonlord fight and marks the pit columns.")
         var y = section(
@@ -3179,6 +3670,27 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             c.fireRadius, FirePitConfig.MIN_FIRE_RADIUS, FirePitConfig.MAX_FIRE_RADIUS, 0.5f, last = false,
             format = { if (it == 0f) "Off" else "%.1f".format(it) },
         ) { v -> FirePit.edit { it.copy(fireRadius = v) } }
+        val phases = PitPhase.entries
+        y = visualChipRow(
+            draw, y, "Pit detects from",
+            "Pits turn red, yellow, then black. Detection starts at this colour; later means less warning.",
+            phases.map { it.label }, phases.indexOf(c.pitPhase), last = false,
+        ) { index -> FirePit.edit { it.copy(pitPhase = phases[index]) } }
+        y = sliderRow(
+            draw, y, "Pit reaction delay", "A pit must be seen this long before it counts.",
+            c.pitDelayMs.toFloat(), 0f, FirePitConfig.MAX_DETECT_DELAY_MS.toFloat(), 50f, last = false,
+            format = { if (it == 0f) "Instant" else "${it.toInt()} ms" },
+        ) { v -> FirePit.edit { it.copy(pitDelayMs = v.toInt()) } }
+        y = sliderRow(
+            draw, y, "Fire reaction delay", "Ground fire must be seen this long before it counts.",
+            c.fireDelayMs.toFloat(), 0f, FirePitConfig.MAX_DETECT_DELAY_MS.toFloat(), 50f, last = false,
+            format = { if (it == 0f) "Instant" else "${it.toInt()} ms" },
+        ) { v -> FirePit.edit { it.copy(fireDelayMs = v.toInt()) } }
+        y = toggleRow(
+            draw, y, "Air strafe",
+            "Airborne with a pit, fire or Quazii zone under your landing spot: steers you sideways in the air. Moves you for you, so it is macro-like. Client movement only.",
+            c.airAvoid, last = false,
+        ) { FirePit.edit { it.copy(airAvoid = !it.airAvoid) } }
         y = toggleRow(
             draw, y, "Hard avoid",
             "Fire (and its avoid radius) acts like a wall you can't walk into. Client movement only; needs loader 1.0.3.43.",
@@ -3194,6 +3706,35 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             c.walkTimeoutMs.toFloat(), FirePitConfig.MIN_WALK_TIMEOUT_MS.toFloat(), FirePitConfig.MAX_WALK_TIMEOUT_MS.toFloat(), 100f,
             last = false, format = { "%.1fs".format(it / 1000f) },
         ) { v -> FirePit.edit { it.copy(walkTimeoutMs = v.toInt()) } }
+        y = note(
+            draw, y,
+            "Priority (0-10, higher wins): when hazards compete, the higher one gets the action bar line, and standing in one that outranks the beam stops the beam jump. Ties go to the beam.",
+        )
+        val priorityFormat = { v: Float -> v.toInt().toString() }
+        y = sliderRow(
+            draw, y, "Priority: Quazii beam", "How urgent the beam is.",
+            c.priorityBeam.toFloat(), 0f, FirePitConfig.MAX_PRIORITY.toFloat(), 1f, last = false, format = priorityFormat,
+        ) { v -> FirePit.edit { it.copy(priorityBeam = v.toInt()) } }
+        y = sliderRow(
+            draw, y, "Priority: ground fire", "Fire already on the ground.",
+            c.priorityFire.toFloat(), 0f, FirePitConfig.MAX_PRIORITY.toFloat(), 1f, last = false, format = priorityFormat,
+        ) { v -> FirePit.edit { it.copy(priorityFire = v.toInt()) } }
+        y = sliderRow(
+            draw, y, "Priority: red pit", "Pit in its first (red) phase.",
+            c.priorityPitRed.toFloat(), 0f, FirePitConfig.MAX_PRIORITY.toFloat(), 1f, last = false, format = priorityFormat,
+        ) { v -> FirePit.edit { it.copy(priorityPitRed = v.toInt()) } }
+        y = sliderRow(
+            draw, y, "Priority: yellow pit", "Pit in its second (yellow) phase.",
+            c.priorityPitYellow.toFloat(), 0f, FirePitConfig.MAX_PRIORITY.toFloat(), 1f, last = false, format = priorityFormat,
+        ) { v -> FirePit.edit { it.copy(priorityPitYellow = v.toInt()) } }
+        y = sliderRow(
+            draw, y, "Priority: black pit", "Pit in its last (black) phase, just before the fire.",
+            c.priorityPitBlack.toFloat(), 0f, FirePitConfig.MAX_PRIORITY.toFloat(), 1f, last = false, format = priorityFormat,
+        ) { v -> FirePit.edit { it.copy(priorityPitBlack = v.toInt()) } }
+        y = sliderRow(
+            draw, y, "Priority: Quazii zone", "The step-back zone around Quazii's feet.",
+            c.priorityQuaziiZone.toFloat(), 0f, FirePitConfig.MAX_PRIORITY.toFloat(), 1f, last = false, format = priorityFormat,
+        ) { v -> FirePit.edit { it.copy(priorityQuaziiZone = v.toInt()) } }
         y = actionRow(draw, y, "Pit blocks", "Block ids that mark a pit. Reset restores the defaults.", last = false) { cy ->
             val resetX = rightX(72)
             draw.button("Reset", resetX, cy, ButtonStyle.GHOST) {
@@ -3207,9 +3748,14 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             FirePit.edit { it.copy(debugLog = !it.debugLog) }
         }
         y = note(draw, y, "Logs block changes around you to latest.log during the fight, to find which block marks a pit.")
-        y += 8
-        y = section(
-            draw, y, "Quazii beam",
+        return y
+    }
+
+    private fun drawBlazeQuazii(draw: MenuDraw, startY: Int): Int {
+        val c = FirePit.config()
+        val helpY = pageHelp(draw, startY, "Quazii's beam and body. Needs the Blaze switch on.")
+        var y = section(
+            draw, helpY, "Quazii beam",
             "Quazii's beam spins around its body and heals it 20% per hit. Works without the pit helper.",
         )
         val beamModes = BeamDodge.entries
@@ -3234,7 +3780,48 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             "Quazii's hitbox acts like a wall and you get eased out if it walks into you; the beam hits repeatedly inside it.",
             c.avoidQuaziiBody, last = false,
         ) { FirePit.edit { it.copy(avoidQuaziiBody = !it.avoidQuaziiBody) } }
+        y = toggleRow(
+            draw, y, "Step back from Quazii",
+            "Treats the block Quazii stands on like a fire pit so you are told (or walked) to step back. Needs the fire pit helper on.",
+            c.quaziiStand, last = false,
+        ) { FirePit.edit { it.copy(quaziiStand = !it.quaziiStand) } }
+        y = sliderRow(
+            draw, y, "Quazii radius", "Blocks around his feet that count as a pit.",
+            c.quaziiStandRadius, FirePitConfig.MIN_QUAZII_STAND_RADIUS, FirePitConfig.MAX_QUAZII_STAND_RADIUS, 0.5f,
+            last = false, format = { "%.1f".format(it) },
+        ) { v -> FirePit.edit { it.copy(quaziiStandRadius = v) } }
         y = note(draw, y, "Presses your jump key for you, which is macro-like. Debug log writes one line per sweep.")
+        return y
+    }
+
+    private fun drawBlazeMobs(draw: MenuDraw, startY: Int): Int {
+        val c = FirePit.config()
+        val helpY = pageHelp(draw, startY, "Typhoeus and his fire. Both are treated like a fire pit so you are told (or walked) to step away. Needs the Blaze switch on.")
+        var y = section(draw, helpY, "Fire pillars", "The countdown pillar (\"2s 8 hits\") that burns everything around it.")
+        y = toggleRow(draw, y, "Avoid fire pillars", "Keep clear of the ground around every fire pillar.", c.avoidPillars, last = false) {
+            FirePit.edit { it.copy(avoidPillars = !it.avoidPillars) }
+        }
+        y = sliderRow(
+            draw, y, "Pillar radius", "Blocks around a pillar that count as a pit.",
+            c.pillarRadius, FirePitConfig.MIN_QUAZII_STAND_RADIUS, FirePitConfig.MAX_QUAZII_STAND_RADIUS, 0.5f,
+            last = false, format = { "%.1f".format(it) },
+        ) { v -> FirePit.edit { it.copy(pillarRadius = v) } }
+        y += 8
+        y = section(draw, y, "Typhoeus and other mobs", "Name tags are matched ignoring case, colour codes and circled letters.")
+        y = toggleRow(
+            draw, y, "Avoid Typhoeus",
+            "Treats the ground around the mobs named below (Typhoeus by default) as a pit so you step back.",
+            c.avoidMobs, last = false,
+        ) { FirePit.edit { it.copy(avoidMobs = !it.avoidMobs) } }
+        val avoidId = "fp:avoidNames"
+        y = actionRow(draw, y, "Mob names", "Comma separated name parts, matched against name tags.", last = false) { cy ->
+            draw.field(avoidId, field(avoidId, c.avoidMobNames), "Typhoeus", rightX(200), cy, 200, focused == avoidId)
+        }
+        y = sliderRow(
+            draw, y, "Mob radius", "Blocks around each matching mob's feet that count as a pit.",
+            c.avoidMobRadius, FirePitConfig.MIN_QUAZII_STAND_RADIUS, FirePitConfig.MAX_QUAZII_STAND_RADIUS, 0.5f,
+            last = false, format = { "%.1f".format(it) },
+        ) { v -> FirePit.edit { it.copy(avoidMobRadius = v) } }
         return y
     }
 
@@ -3329,18 +3916,22 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         return grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Reset", "Reset the selected count, all counts, or the player list.", last = true) { cy ->
-                val clearW = draw.button("Clear players", rightX(126), cy, ButtonStyle.DANGER) {
-                    TickTimers.updateSlayer { it.clearPlayers() }
-                }
-                val allW = draw.button("All 0", rightX(126) - clearW - 8, cy, ButtonStyle.GHOST) {
-                    TickTimers.updateSlayer { current -> current.copy(players = current.players.map { it.withCount(0) }) }
-                }
-                draw.button("Selected 0", rightX(126) - clearW - allW - 16, cy, ButtonStyle.GHOST) {
-                    val player = TickTimers.settings.slayer.selectedPlayer()
-                    if (player != null) {
-                        TickTimers.updateSlayer { it.updatePlayer(player.name) { current -> current.withCount(0) } }
-                    }
-                }
+                buttonsRight(
+                    draw, cy,
+                    listOf(
+                        Triple("Selected 0", ButtonStyle.GHOST) {
+                            val player = TickTimers.settings.slayer.selectedPlayer()
+                            if (player != null) {
+                                TickTimers.updateSlayer { it.updatePlayer(player.name) { current -> current.withCount(0) } }
+                            }
+                        },
+                        Triple("All 0", ButtonStyle.GHOST) {
+                            TickTimers.updateSlayer { current -> current.copy(players = current.players.map { it.withCount(0) }) }
+                        },
+                        Triple("Clear players", ButtonStyle.DANGER) { TickTimers.updateSlayer { it.clearPlayers() } },
+                    ),
+                    edge = rightX(0),
+                )
             }
         }
     }
@@ -3445,6 +4036,12 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
+        y = section(draw, y + SECTION_GAP, "Window", "How see-through the glass themes are.")
+        y = sliderRow(
+            draw, y, "Opacity", "Window opacity for the glass themes.",
+            look.opacity.toFloat(), GuiLookSettings.MIN_OPACITY.toFloat(), GuiLookSettings.MAX_OPACITY.toFloat(), 1f,
+            last = false, format = { "${it.toInt()}%" },
+        ) { v -> TickTimers.updateLook { it.withOpacity(v.toInt()) } }
         y = section(draw, y + SECTION_GAP, "World", "Vanilla menu blur behind the panel. Off keeps the game sharp.")
         y = grouped(draw, y, 1) { rowY, _ ->
             toggleRow(
@@ -3455,7 +4052,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             ) { TickTimers.updateLook { it.copy(backgroundBlur = !it.backgroundBlur) } }
         }
         return grouped(draw, y, 1) { rowY, _ ->
-            actionRow(draw, rowY, "Reset look", "Rail, Midnight, Segoe, radius 12, blur on.", last = true) { cy ->
+            actionRow(draw, rowY, "Reset look", "Glass dark, Segoe, radius 12, blur on, opacity 62%.", last = true) { cy ->
                 draw.button("Reset", rightX(56), cy, ButtonStyle.DANGER) {
                     fields.remove("look:accent")
                     TickTimers.updateLook { GuiLookSettings() }
@@ -4127,6 +4724,8 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             AetherModuleId.CARRY -> settings.slayer.enabled
             AetherModuleId.FIRE_PITS -> FirePit.config().enabled
             AetherModuleId.BOSS_AIM -> BossAim.config().enabled
+            AetherModuleId.BLOOD_HELPER -> BossAim.config().bloodAim
+            AetherModuleId.LIVID_HELPER -> BossAim.config().lividAim
             AetherModuleId.CLICK_GUI -> true
             AetherModuleId.INVENTORY_SORT -> InvSortController.settings.enabled
             AetherModuleId.RENAME -> CustomRename.enabled()
@@ -4135,6 +4734,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             AetherModuleId.SPLITS -> RunSplitsController.settings.enabled
             AetherModuleId.SCORE -> ScoreTracker.settings.enabled
             AetherModuleId.DRAGONS -> DragonController.settings().enabled
+            AetherModuleId.TERMINALS -> TerminalOverlay.settings.enabled
             else -> module.defaultEnabled
         }
     }
@@ -4161,6 +4761,8 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             AetherModuleId.CARRY -> TickTimers.updateSlayer { it.copy(enabled = !it.enabled) }
             AetherModuleId.FIRE_PITS -> FirePit.edit { it.copy(enabled = !it.enabled) }
             AetherModuleId.BOSS_AIM -> BossAim.edit { it.copy(enabled = !it.enabled) }
+            AetherModuleId.BLOOD_HELPER -> BossAim.edit { it.copy(bloodAim = !it.bloodAim) }
+            AetherModuleId.LIVID_HELPER -> BossAim.edit { it.copy(lividAim = !it.lividAim) }
             AetherModuleId.INVENTORY_SORT -> InvSortController.setEnabled(!InvSortController.settings.enabled)
             AetherModuleId.RENAME -> CustomRename.setEnabled(!CustomRename.enabled())
             AetherModuleId.MORPH -> PlayerDisguise.setEnabled(!PlayerDisguise.enabled())
@@ -4168,6 +4770,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             AetherModuleId.SPLITS -> RunSplitsController.updateSettings { it.copy(enabled = !it.enabled) }
             AetherModuleId.SCORE -> ScoreTracker.updateSettings { it.copy(enabled = !it.enabled) }
             AetherModuleId.DRAGONS -> DragonController.updateSettings { it.copy(enabled = !it.enabled) }
+            AetherModuleId.TERMINALS -> TerminalOverlay.updateSettings { it.copy(enabled = !it.enabled) }
             AetherModuleId.CLICK_GUI, AetherModuleId.HUD_EDIT -> {
                 aetherOverrides[module.id] = !(aetherOverrides[module.id] ?: module.defaultEnabled)
             }
@@ -4199,7 +4802,40 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return ty + SECTION_GAP
     }
 
+    private fun cardsOn(): Boolean = !TickTimers.settings.look.theme.palette(null).glass &&
+        ConfigContents.at(page, subtab) in CARD_CONTENTS
+
+    private fun closeCard(endY: Int) {
+        val key = cardKey ?: return
+        cardExtent[key] = (endY - cardTop - CARD_GAP).coerceAtLeast(0)
+        cardKey = null
+    }
+
+    /** Opens a section card: background from last frame's height, an accent bar, the title and its blurb. */
+    private fun cardSection(draw: MenuDraw, y: Int, title: String, blurb: String): Int {
+        closeCard(y)
+        val key = "${page.name}:$subtab:$title"
+        cardKey = key
+        cardTop = y
+        cardRows = 0
+        val height = cardExtent[key] ?: 0
+        if (height > 0) card(draw, innerLeft(), y, innerWidth(), height)
+        val headingH = draw.lineHeight(draw.headingFont)
+        val textX = innerLeft() + CARD_PAD + 10
+        draw.round(innerLeft() + CARD_PAD, y + CARD_PAD, 3, headingH, 1.5f, draw.palette.accent)
+        draw.text(title.uppercase(), textX, y + CARD_PAD, draw.palette.accent, draw.headingFont)
+        var ty = y + CARD_PAD + headingH + 4
+        draw.wrap(blurb, innerWidth() - CARD_PAD * 2 - 10).forEach { line ->
+            draw.text(line, textX, ty, draw.palette.secondary, draw.descFont)
+            ty += draw.lineHeight(draw.descFont)
+        }
+        return ty + CARD_PAD - 2
+    }
+
     private fun section(draw: MenuDraw, y: Int, title: String, blurb: String): Int {
+        anchorsNext.add(title to (y + scroll - (contentOrigin + metrics.viewTop)))
+        if (cardsOn()) return cardSection(draw, y, title, blurb)
+        if (draw.palette.glass) return glassSection(draw, y, title, blurb)
         draw.heading(title, innerLeft(), y)
         val headingH = draw.lineHeight(draw.headingFont)
         val hovered = draw.hovered(innerLeft(), y, innerWidth(), headingH + 4)
@@ -4207,6 +4843,18 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             draw.requestTooltip(blurb, innerWidth() - 28)
         }
         return y + headingH + 10
+    }
+
+    /** Flat section heading: small muted caps with a hairline, the blurb on hover. */
+    private fun glassSection(draw: MenuDraw, y: Int, title: String, blurb: String): Int {
+        val top = y + 6
+        draw.heading(title, innerLeft(), top)
+        val headingH = draw.lineHeight(draw.headingFont)
+        draw.line(innerLeft() + draw.measure(title.uppercase(), draw.headingFont) + 10, top + headingH / 2, innerWidth() - draw.measure(title.uppercase(), draw.headingFont) - 10)
+        if (descriptionVisible("section:$title", draw.hovered(innerLeft(), top, innerWidth(), headingH + 4))) {
+            draw.requestTooltip(blurb, innerWidth() - 28)
+        }
+        return top + headingH + 8
     }
 
     private fun note(draw: MenuDraw, y: Int, text: String): Int {
@@ -4234,7 +4882,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         if (draw.chrome.layout != GuiLayoutId.RIBBON) {
             draw.round(x, y, w, h, corner, draw.palette.group)
         }
-        draw.outline(x, y, w, h, corner, draw.palette.line)
+        if (!draw.palette.glass) draw.outline(x, y, w, h, corner, draw.palette.line)
     }
 
     private fun actionBar(draw: MenuDraw, y: Int, title: String, controls: (Int) -> Unit): Int {
@@ -4274,14 +4922,23 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         val row = metrics.row
         val cardHeight = row - 4
         val corner = draw.chrome.cardRadius
-        draw.round(left, y, width, cardHeight, corner, draw.palette.group)
-        draw.outline(left, y, width, cardHeight, corner, draw.palette.line)
-        if (draw.hovered(left, y, width, row)) {
-            draw.round(left, y, width, cardHeight, corner, draw.palette.rowHover)
-            draw.outline(left, y, width, cardHeight, corner, 0x28C9BBFF)
+        if (draw.palette.glass) {
+            if (draw.hovered(left, y, width, row)) draw.round(left - 4, y, width + 8, cardHeight, 8f, draw.palette.rowHover)
+            draw.line(left, y + row - 2, width)
+        } else if (cardKey != null) {
+            if (cardRows > 0) draw.line(left + CARD_PAD, y - 2, width - CARD_PAD * 2)
+            cardRows++
+            if (draw.hovered(left, y, width, row)) draw.round(left + 4, y, width - 8, cardHeight, 6f, draw.palette.rowHover)
+        } else {
+            draw.round(left, y, width, cardHeight, corner, draw.palette.group)
+            draw.outline(left, y, width, cardHeight, corner, draw.palette.line)
+            if (draw.hovered(left, y, width, row)) {
+                draw.round(left, y, width, cardHeight, corner, draw.palette.rowHover)
+                draw.outline(left, y, width, cardHeight, corner, 0x28C9BBFF)
+            }
         }
         val hovered = draw.hovered(left, y, width, row)
-        draw.text(title, left + 18, y + 8, draw.palette.text, draw.bodyFont)
+        draw.text(title, left + if (draw.palette.glass) 4 else 18, y + 8, draw.palette.text, draw.bodyFont)
         if (descriptionVisible("legacy:$title", hovered)) draw.requestTooltip(subtitle, width - 28)
         controls(y + ((cardHeight - 28) / 2).coerceAtLeast(2))
         return y + row
@@ -4299,6 +4956,23 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     }
 
     private fun field(id: String, default: String = ""): String = fields.getOrPut(id) { default }
+
+    private fun applyFishingField(id: String, value: String) {
+        val number = value.trim().toIntOrNull() ?: return
+        val ms = number.coerceIn(0, FishingMacroConfig.MAX_DELAY_MS)
+        FishingMacro.edit { c ->
+            when (id) {
+                "fish:reel:min" -> c.copy(reelMinMs = ms, reelMaxMs = maxOf(c.reelMaxMs, ms))
+                "fish:reel:max" -> c.copy(reelMaxMs = ms, reelMinMs = minOf(c.reelMinMs, ms))
+                "fish:cast:min" -> c.copy(castMinMs = ms, castMaxMs = maxOf(c.castMaxMs, ms))
+                "fish:cast:max" -> c.copy(castMaxMs = ms, castMinMs = minOf(c.castMinMs, ms))
+                "fish:quiet" -> c.copy(
+                    noBiteSeconds = number.coerceIn(FishingMacroConfig.MIN_NO_BITE_SECONDS, FishingMacroConfig.MAX_NO_BITE_SECONDS),
+                )
+                else -> c
+            }
+        }
+    }
 
     private fun applyField(id: String, value: String) {
         when {
@@ -4334,9 +5008,37 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             id == "leap:autoDelay" -> value.toIntOrNull()?.coerceIn(0, 2000)?.let { delay ->
                 TickTimers.updateLeap { it.copy(autoLeapDelayMs = delay) }
             }
+            id == "leap:lockHudX" -> value.trim().toIntOrNull()?.coerceIn(-2000, 2000)?.let { px ->
+                TickTimers.updateLeap { it.copy(lockHudX = px) }
+            }
+            id == "leap:lockHudY" -> value.trim().toIntOrNull()?.coerceIn(-2000, 2000)?.let { px ->
+                TickTimers.updateLeap { it.copy(lockHudY = px) }
+            }
             id == "leap:opacity" -> value.toIntOrNull()?.coerceIn(0, 100)?.let { opacity ->
                 TickTimers.updateLeap { it.copy(menuOpacity = opacity) }
             }
+            id == "pet:delayMin" -> value.trim().toIntOrNull()?.coerceIn(0, PetSwapConfig.MAX_DELAY_MS)?.let { ms ->
+                PetSwap.edit { it.copy(delayMinMs = ms, delayMaxMs = maxOf(it.delayMaxMs, ms)) }
+            }
+            id == "pet:delayMax" -> value.trim().toIntOrNull()?.coerceIn(0, PetSwapConfig.MAX_DELAY_MS)?.let { ms ->
+                PetSwap.edit { it.copy(delayMaxMs = ms, delayMinMs = minOf(it.delayMinMs, ms)) }
+            }
+            id == "freecam:speed" -> value.trim().toFloatOrNull()?.let { speed ->
+                Freecam.edit { it.copy(speed = speed.coerceIn(FreecamConfig.MIN_SPEED, FreecamConfig.MAX_SPEED)) }
+            }
+            id == "lava:minY" -> value.trim().toIntOrNull()?.let { y ->
+                LavaEsp.edit { it.copy(minY = y.coerceIn(LavaEspConfig.MIN_Y_LIMIT, LavaEspConfig.MAX_Y_LIMIT)) }
+            }
+            id == "lava:radius" -> value.trim().toIntOrNull()?.let { r ->
+                LavaEsp.edit { it.copy(radiusChunks = r.coerceIn(LavaEspConfig.MIN_RADIUS, LavaEspConfig.MAX_RADIUS)) }
+            }
+            id.startsWith("fish:") -> applyFishingField(id, value)
+            id == "pet:castName" ->PetSwap.edit { it.copy(castPet = PetMenu.cleanTarget(value)) }
+            id.startsWith("pet:name:") -> {
+                val index = id.removePrefix("pet:name:").toIntOrNull() ?: return
+                PetSwap.edit { config -> config.withPet(index) { it.copy(name = PetMenu.cleanTarget(value)) } }
+            }
+            id == "fp:avoidNames" ->FirePit.edit { it.copy(avoidMobNames = value.take(200)) }
             id == "leap:keyword" -> TickTimers.updateLeap { it.copy(keyword = value.ifBlank { "[icantpy]" }) }
             id == "leap:announce" -> TickTimers.updateLeap {
                 it.copy(announceTemplate = value.ifBlank { LeapChatPatterns.DEFAULT_ANNOUNCE })

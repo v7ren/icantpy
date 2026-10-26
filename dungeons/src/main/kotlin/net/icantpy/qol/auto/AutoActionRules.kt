@@ -1,7 +1,7 @@
 package net.icantpy.qol.auto
 
 /** Which routine a queued auto action runs. */
-enum class AutoActionKind { SORT_INVENTORY, EQUIP_STATS, SWITCH_LOADOUT }
+enum class AutoActionKind { SORT_INVENTORY, EQUIP_STATS, SWITCH_LOADOUT, SWAP_PET }
 
 /** What is on screen when a queued auto action looks at the client. */
 enum class AutoScreenState { NONE, PLAYER_INVENTORY, OTHER }

@@ -277,6 +277,8 @@ data class LeapOrientTrigger(
     val floor: LeapFloor = LeapFloor.ANY,
     val phase: LeapPhase = LeapPhase.ANY,
     val section: Int = 0,
+    /** Fires only while a dungeon boss fight is running. */
+    val bossOnly: Boolean = false,
     val route: LeapStormRoute = LeapStormRoute.ANY,
     val forClass: LeapDungeonClass = LeapDungeonClass.EMPTY,
     val ee2Owner: LeapDungeonClass = LeapDungeonClass.EMPTY,
@@ -356,7 +358,11 @@ data class LeapOrientTrigger(
     /** Text for each row in order, such as "Sort: P1", "Loadout 3", or the leap destination for a leap row. */
     fun stepLabels(presetLabels: Map<String, String> = emptyMap()): List<String> =
         steps.map { step ->
-            if (step.kind == LeapAutoKind.LEAP_TARGET) leapText() ?: step.label(presetLabels) else step.label(presetLabels)
+            if (step.kind == LeapAutoKind.LEAP_TARGET) {
+                LeapConditions.prefix(step) + (leapText() ?: step.label(presetLabels))
+            } else {
+                step.label(presetLabels)
+            }
         }
 
     /** Leap destination text, or null when this trigger does not arm a leap. */
@@ -578,6 +584,7 @@ object LeapTriggerJson {
             item.addProperty("floor", trigger.floor.name)
             item.addProperty("phase", trigger.phase.name)
             item.addProperty("section", trigger.section)
+            item.addProperty("bossOnly", trigger.bossOnly)
             item.addProperty("route", trigger.route.name)
             item.addProperty("forClass", trigger.forClass.name)
             item.addProperty("ee2Owner", trigger.ee2Owner.name)
@@ -642,6 +649,7 @@ object LeapTriggerJson {
                 floor = enumValue(item, "floor", LeapFloor.ANY),
                 phase = enumValue(item, "phase", event.nativePhase() ?: LeapPhase.fromToken(whenState)),
                 section = int(item, "section", 0),
+                bossOnly = bool(item, "bossOnly", false),
                 route = enumValue(item, "route", LeapStormRoute.ANY),
                 forClass = LeapDungeonClass.fromToken(string(item, "forClass", "empty")) ?: LeapDungeonClass.EMPTY,
                 ee2Owner = LeapDungeonClass.fromToken(string(item, "ee2Owner", "empty")) ?: LeapDungeonClass.EMPTY,
@@ -751,7 +759,39 @@ object LeapTriggerJson {
             markSpin = bool(item, "markSpin", false),
             markBob = bool(item, "markBob", true),
             markThroughWalls = bool(item, "markThroughWalls", false),
+            branch = LeapBranch.fromId(string(item, "branch", "")) ?: LeapBranch.ALWAYS,
+            conditions = termsFromJson(item),
+            requires = LeapDungeonClass.fromToken(string(item, "requires", "empty")) ?: LeapDungeonClass.EMPTY,
         )
+    }
+
+    /** Terms with an unknown fact are dropped; a missing value falls back to the fact's first choice. */
+    private fun termsFromJson(item: JsonObject): List<LeapTerm> {
+        if (!item.has("conditions") || !item.get("conditions").isJsonArray) return emptyList()
+        return item.getAsJsonArray("conditions").mapNotNull { element ->
+            if (!element.isJsonObject) return@mapNotNull null
+            val term = element.asJsonObject
+            val fact = LeapFact.fromId(string(term, "fact", "")) ?: return@mapNotNull null
+            LeapTerm(
+                fact = fact,
+                value = string(term, "value", "").ifBlank { LeapConditions.defaultValue(fact) },
+                negate = bool(term, "negate", false),
+                join = LeapJoin.fromId(string(term, "join", "")) ?: LeapJoin.AND,
+            )
+        }.take(LeapConditions.MAX_TERMS)
+    }
+
+    private fun termsToJson(terms: List<LeapTerm>): JsonArray {
+        val array = JsonArray()
+        terms.forEach { term ->
+            val item = JsonObject()
+            item.addProperty("fact", term.fact.id)
+            item.addProperty("value", term.value)
+            item.addProperty("negate", term.negate)
+            item.addProperty("join", term.join.id)
+            array.add(item)
+        }
+        return array
     }
 
     fun stepsToJson(steps: List<LeapAutoStep>): JsonArray {
@@ -791,6 +831,9 @@ object LeapTriggerJson {
             item.addProperty("markSpin", step.markSpin)
             item.addProperty("markBob", step.markBob)
             item.addProperty("markThroughWalls", step.markThroughWalls)
+            item.addProperty("branch", step.branch.id)
+            item.add("conditions", termsToJson(step.conditions))
+            item.addProperty("requires", step.requires.name)
             array.add(item)
         }
         return array

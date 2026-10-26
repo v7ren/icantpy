@@ -14,7 +14,7 @@ class GuiLookTest {
             JsonParser.parseString("""{"layout":"nope","theme":"","font":"comic","radius":99,"blur":true}""").asJsonObject,
         )
         assertEquals(GuiLayoutId.RAIL, look.layout)
-        assertEquals(GuiThemeId.MIDNIGHT, look.theme)
+        assertEquals(GuiThemeId.GLASS_DARK, look.theme)
         assertEquals(GuiFontId.SEGOE, look.font)
         assertEquals(12, look.radius)
         assertTrue(look.backgroundBlur)
@@ -96,19 +96,39 @@ class GuiLookTest {
 
     @Test
     fun featureInventoryMatchesReferenceSections() {
-        assertEquals(24, AetherModules.all.size)
+        assertEquals(27, AetherModules.all.size)
         fun featureCount(section: ConfigSection) = ConfigPage.entries
             .filter { it.section == section }
             .sumOf { it.moduleIds.size }
-        assertEquals(7, featureCount(ConfigSection.DUNGEONS))
+        assertEquals(9, featureCount(ConfigSection.DUNGEONS))
+        assertEquals(1, featureCount(ConfigSection.BOSSES))
         assertEquals(8, featureCount(ConfigSection.QOL))
         assertEquals(2, featureCount(ConfigSection.INTERFACE))
         assertTrue(ConfigPage.LEAP in ConfigNav.search("leap"))
+        assertTrue(ConfigPage.TERMINALS in ConfigNav.search("terminal solver"))
     }
 
     @Test
     fun fontStylesUseConstructorWeights() {
         assertEquals(400, SkiaFonts.normal.weight)
         assertEquals(700, SkiaFonts.bold.weight)
+    }
+
+    @Test
+    fun oldSavedLooksMoveToGlassOnceAndKeepLaterChoices() {
+        val old = com.google.gson.JsonParser.parseString("""{"theme":"midnight","layout":"rail"}""").asJsonObject
+        assertEquals(GuiThemeId.GLASS_DARK, GuiLookSettings.fromJson(old).theme)
+        val chosen = GuiLookSettings.toJson(GuiLookSettings(theme = GuiThemeId.MIDNIGHT))
+        assertEquals(GuiThemeId.MIDNIGHT, GuiLookSettings.fromJson(chosen).theme)
+    }
+
+    @Test
+    fun opacityIsClampedAndScalesTheGlassWindow() {
+        assertEquals(95, GuiLookSettings().withOpacity(500).opacity)
+        assertEquals(25, GuiLookSettings().withOpacity(0).opacity)
+        val faint = GuiThemeId.GLASS_DARK.palette(null, 25).window ushr 24
+        val solid = GuiThemeId.GLASS_DARK.palette(null, 95).window ushr 24
+        assertTrue(faint < solid)
+        assertTrue(GuiThemeId.GLASS_DARK.palette(null).glass)
     }
 }

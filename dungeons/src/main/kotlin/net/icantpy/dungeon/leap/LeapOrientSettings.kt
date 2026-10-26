@@ -45,6 +45,9 @@ data class LeapOrientSettings(
     val durationSeconds: Int = 10,
     val keyword: String = "[icantpy]",
     val showLockHud: Boolean = true,
+    /** Lock HUD position, in gui pixels from its default spot (centered, just above the hotbar). */
+    val lockHudX: Int = 0,
+    val lockHudY: Int = 0,
     val showBossDeathNotifier: Boolean = true,
     val showChatDebugHud: Boolean = true,
     val showChatDebugMessages: Boolean = false,
@@ -64,6 +67,8 @@ data class LeapOrientSettings(
     val boxOrder: List<String> = emptyList(),
     val autoLeapEnabled: Boolean = false,
     val autoLeapBossOnly: Boolean = true,
+    /** Cards fire only during a dungeon boss fight. Off by default so every card keeps working in the clear. */
+    val bossOnlyTriggers: Boolean = false,
     val autoLeapDelayMs: Int = 100,
     val doorOpenerLeapEnabled: Boolean = false,
     val sortMode: LeapSortMode = LeapSortMode.ODIN,
@@ -240,6 +245,8 @@ data class LeapOrientSettings(
                 durationSeconds = LeapTriggerJson.int(obj, "durationSeconds", defaults.durationSeconds).coerceIn(1, 60),
                 keyword = LeapTriggerJson.string(obj, "keyword", defaults.keyword).ifBlank { defaults.keyword },
                 showLockHud = LeapTriggerJson.bool(obj, "showLockHud", defaults.showLockHud),
+                lockHudX = LeapTriggerJson.int(obj, "lockHudX", defaults.lockHudX).coerceIn(-2000, 2000),
+                lockHudY = LeapTriggerJson.int(obj, "lockHudY", defaults.lockHudY).coerceIn(-2000, 2000),
                 showBossDeathNotifier = LeapTriggerJson.bool(
                     obj,
                     "showBossDeathNotifier",
@@ -268,6 +275,7 @@ data class LeapOrientSettings(
                 boxOrder = LeapTriggerJson.stringsFromJson(obj, "boxOrder"),
                 autoLeapEnabled = LeapTriggerJson.bool(obj, "autoLeapEnabled", defaults.autoLeapEnabled),
                 autoLeapBossOnly = LeapTriggerJson.bool(obj, "autoLeapBossOnly", defaults.autoLeapBossOnly),
+                bossOnlyTriggers = LeapTriggerJson.bool(obj, "bossOnlyTriggers", defaults.bossOnlyTriggers),
                 autoLeapDelayMs = LeapTriggerJson.int(obj, "autoLeapDelayMs", defaults.autoLeapDelayMs).coerceIn(0, 2000),
                 doorOpenerLeapEnabled = LeapTriggerJson.bool(obj, "doorOpenerLeapEnabled", defaults.doorOpenerLeapEnabled),
                 sortMode = LeapTriggerJson.enumValue(obj, "sortMode", defaults.sortMode),
@@ -303,6 +311,8 @@ data class LeapOrientSettings(
             obj.addProperty("durationSeconds", settings.durationSeconds)
             obj.addProperty("keyword", settings.keyword)
             obj.addProperty("showLockHud", settings.showLockHud)
+            obj.addProperty("lockHudX", settings.lockHudX)
+            obj.addProperty("lockHudY", settings.lockHudY)
             obj.addProperty("showBossDeathNotifier", settings.showBossDeathNotifier)
             obj.addProperty("showChatDebugHud", settings.showChatDebugHud)
             obj.addProperty("showChatDebugMessages", settings.showChatDebugMessages)
@@ -322,6 +332,7 @@ data class LeapOrientSettings(
             obj.add("boxOrder", LeapTriggerJson.stringsToJson(settings.boxOrder))
             obj.addProperty("autoLeapEnabled", settings.autoLeapEnabled)
             obj.addProperty("autoLeapBossOnly", settings.autoLeapBossOnly)
+            obj.addProperty("bossOnlyTriggers", settings.bossOnlyTriggers)
             obj.addProperty("autoLeapDelayMs", settings.autoLeapDelayMs)
             obj.addProperty("doorOpenerLeapEnabled", settings.doorOpenerLeapEnabled)
             obj.addProperty("sortMode", settings.sortMode.name)

@@ -12,6 +12,9 @@ import net.icantpy.qol.invsort.InvSortTiming
 import net.icantpy.qol.loadout.Loadout
 import net.icantpy.qol.loadout.LoadoutPlan
 import net.icantpy.qol.loadout.LoadoutScreen
+import net.icantpy.qol.pets.PetChat
+import net.icantpy.qol.pets.PetMenu
+import net.icantpy.qol.pets.PetSwap
 import net.icantpy.qol.stats.StatsArmorScreen
 import net.icantpy.qol.stats.ArmorPreset
 import net.icantpy.qol.stats.ItemFingerprint
@@ -88,6 +91,20 @@ object AutoActionQueue {
     fun cancelRunning(reason: String) {
         activeRun?.run?.cancel(reason)
         InvSortRunner.cancel(reason)
+    }
+
+    /** True while a pet swap to [pet] is running or is the next step to start. */
+    fun hasPetSwapFor(pet: String): Boolean {
+        val run = activeRun?.run as? PetAutoRun
+        if (run != null && PetChat.isSamePet(pet, run.petName)) return true
+        val next = pending.peek()?.target as? AutoTarget.Pet ?: return false
+        return PetChat.isSamePet(pet, next.name)
+    }
+
+    /** Stops a running pet swap and drops one that has not started, for example when Autopet got there first. */
+    fun cancelPetSwaps(reason: String) {
+        (activeRun?.run as? PetAutoRun)?.cancel(reason)
+        if (pending.peek()?.target is AutoTarget.Pet) pending.pop()
     }
 
     /** Drops every step still waiting to start. Steps of a run in progress are left to [cancelRunning]. */
@@ -249,8 +266,13 @@ object AutoActionQueue {
         val busy = isBusy()
         if (!busy && head.waitStartMs < 0L) {
             head.waitStartMs = nowMs
-            val sampled = InvSortTiming(AutoActionRules.REACTION_MIN_MS, AutoActionRules.REACTION_MAX_MS).sampleDelayMs().toLong()
-            head.reactionDelayMs = AutoActionRules.reactionDelayMs(instantMode(), sampled)
+            if (head.target.kind == AutoActionKind.SWAP_PET) {
+                // Pet swaps use their own delay settings for the wait before /pets too.
+                head.reactionDelayMs = PetSwap.timing().sampleDelayMs().toLong()
+            } else {
+                val sampled = InvSortTiming(AutoActionRules.REACTION_MIN_MS, AutoActionRules.REACTION_MAX_MS).sampleDelayMs().toLong()
+                head.reactionDelayMs = AutoActionRules.reactionDelayMs(instantMode(), sampled)
+            }
         }
         val elapsedMs = if (head.waitStartMs < 0L) 0L else nowMs - head.waitStartMs
         val kind = head.target.kind
@@ -291,7 +313,7 @@ object AutoActionQueue {
         if (screen is LoadoutScreen || screen is StatsArmorScreen) return true
         val menu = screen as? AbstractContainerScreen<*> ?: return false
         val title = menu.title.string
-        return StatsArmor.isStatsTitle(title) || Loadout.isLoadoutWindowTitle(title)
+        return StatsArmor.isStatsTitle(title) || Loadout.isLoadoutWindowTitle(title) || PetMenu.isPetsTitle(title)
     }
 
     private fun cursorHoldsItem(): Boolean {
@@ -344,6 +366,7 @@ object AutoActionQueue {
         is AutoTarget.Sort -> InvSortController.settings.enabled
         is AutoTarget.Stats -> TickTimers.settings.statsArmor.enabled
         is AutoTarget.Loadout -> true
+        is AutoTarget.Pet -> PetSwap.config.enabled
     }
 
     private fun start(step: QueuedAutoStep, nowMs: Long) {
@@ -352,6 +375,7 @@ object AutoActionQueue {
             is AutoTarget.Sort -> startSort(target.presetName, step.batchId)
             is AutoTarget.Stats -> startStats(target.presetId, step.batchId, nowMs)
             is AutoTarget.Loadout -> startLoadout(target.number, step.batchId, nowMs)
+            is AutoTarget.Pet -> startPet(target.name, step.batchId, nowMs)
         }
     }
 
@@ -403,11 +427,30 @@ object AutoActionQueue {
             return
         }
         if (!canSendCommands()) return
+        net.icantpy.dungeon.leap.LeapOrient.flow("auto loadout $number is starting now (Hypixel: sends /loadout, waits for the menu, clicks Loadout $number)")
         // Already equipped: the step counts as finished and the batch moves on to its next step.
-        if (Loadout.skipIfAlreadyEquipped(number)) return
+        if (Loadout.skipIfAlreadyEquipped(number)) {
+            net.icantpy.dungeon.leap.LeapOrient.flow("auto loadout $number: already equipped, nothing to do")
+            return
+        }
         val run = LoadoutAutoRun(number, pacing(), InvSortController.settings.moveCursor, InvSortController.settings.safetyLevel, nowMs)
         activeRun = ActiveRun(run, batchId, label(AutoActionKind.SWITCH_LOADOUT))
+        if (Minecraft.getInstance().hasSingleplayerServer()) {
+            say("Auto loadout: singleplayer has no /loadout; right-click the Loadouts chest within ${AutoMenuRun.LOCAL_OPEN_WAIT_MS / 1000}s")
+            return
+        }
         IcantpyClientActions.sendCommand("loadout")
+    }
+
+    private fun startPet(name: String, batchId: Long, nowMs: Long) {
+        if (name.isBlank()) {
+            say("Pet swap: no pet name set")
+            return
+        }
+        if (!canSendCommands()) return
+        val run = PetAutoRun(name, PetSwap.timing(),InvSortController.settings.moveCursor, InvSortController.settings.safetyLevel, nowMs)
+        activeRun = ActiveRun(run, batchId, label(AutoActionKind.SWAP_PET))
+        IcantpyClientActions.sendCommand("pets")
     }
 
     private fun finishRun(active: ActiveRun) {
@@ -460,6 +503,7 @@ object AutoActionQueue {
         AutoActionKind.SORT_INVENTORY -> "Auto sort"
         AutoActionKind.EQUIP_STATS -> "Auto stats"
         AutoActionKind.SWITCH_LOADOUT -> "Auto loadout"
+        AutoActionKind.SWAP_PET -> "Pet swap"
     }
 
     private const val BATCH_KEY_PREFIX = "batch:"

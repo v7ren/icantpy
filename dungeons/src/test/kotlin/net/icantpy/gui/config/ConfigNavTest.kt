@@ -58,7 +58,7 @@ class ConfigNavTest {
 
     @Test
     fun searchMatchesSectionAndFeatureNames() {
-        assertTrue(ConfigPage.FREELOOK in ConfigNav.search("quality"))
+        assertTrue(ConfigPage.FREELOOK in ConfigNav.search("utility"))
         assertTrue(ConfigPage.CLOCKS in ConfigNav.search("mechanic"))
         assertTrue(ConfigPage.STATS in ConfigNav.search("Stats"))
     }

@@ -25,7 +25,7 @@ class LoadoutAutoRun(
 ) : AutoMenuRun(
     label = "Auto loadout",
     isMenuTitle = Loadout::isLoadoutTitle,
-    openDeadlineMs = startedMs + AutoMenuRun.RESPONSE_TIMEOUT_MS,
+    openDeadlineMs = startedMs + AutoMenuRun.openWaitMs(),
     timing = timing,
     moveCursor = moveCursor,
     safety = safety,
