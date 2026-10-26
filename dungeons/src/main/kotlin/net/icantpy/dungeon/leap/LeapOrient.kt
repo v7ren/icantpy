@@ -1412,7 +1412,7 @@ object LeapOrient {
         return "gave debug Spirit Leap item"
     }
 
-    private fun isDebugLeapItem(stack: ItemStack): Boolean {
+    fun isDebugLeapItem(stack: ItemStack): Boolean {
         if (stack.item != Items.ENDER_EYE && stack.item != Items.RECOVERY_COMPASS) return false
         val name = stack.get(DataComponents.CUSTOM_NAME)?.string ?: return debugActive()
         return name.contains("Spirit Leap", ignoreCase = true)

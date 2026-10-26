@@ -43,13 +43,16 @@ object LeapAutoLeapController {
     private fun handleAttack(): Boolean {
         val cfg = LeapMenu.settings()
         val dungeon = DungeonListener.state
-        if (!cfg.enabled || !dungeon.inDungeon || McUi.currentScreen(mc) != null) return false
         val player = mc.player ?: return false
         if (mc.level == null || !player.isAlive || player.isRemoved) return false
         val item = player.mainHandItem
+        // Silent unless debug is on: only a click with the Spirit Leap in hand is worth explaining.
         if (!isSpiritLeap(item)) return false
+        if (!cfg.enabled) return noted("blocked: Spirit Leap is disabled")
+        if (!inDungeon()) return noted("blocked: not in a dungeon")
+        if (McUi.currentScreen(mc) != null) return noted("blocked: a screen is open")
         if (pending != null) return true
-        if (LeapAutoLeapPolicy.doorOpenerClick(cfg, dungeon.inDungeon, inBossRoom(player))) {
+        if (LeapAutoLeapPolicy.doorOpenerClick(cfg, inDungeon(), inBossRoom(player))) {
             val name = LeapAutoLeapDoorOpener.latestName() ?: return openManualMenu()
             if (LeapRoster.isSelf(name)) return openManualMenu()
             val playerInfo = LeapRoster.knownPlayers().firstOrNull { it.name.equals(name, ignoreCase = true) }
@@ -72,6 +75,16 @@ object LeapAutoLeapController {
         LeapOrient.noteAutoLeap("leaping to ${target.name}")
         return requestTarget(target.name, doorOpener = false)
     }
+
+    private fun noted(reason: String): Boolean {
+        LeapOrient.noteAutoLeap(reason)
+        return false
+    }
+
+    /** A singleplayer test world with leaporient debug on counts as a dungeon, so the click path can be tried there. */
+    private fun localTest(): Boolean = LeapOrient.debugActive() && mc.hasSingleplayerServer()
+
+    private fun inDungeon(): Boolean = DungeonListener.state.inDungeon || localTest()
 
     private fun openManualMenu(): Boolean {
         val player = mc.player ?: return false
@@ -104,6 +117,19 @@ object LeapAutoLeapController {
         val request = pending ?: return
         val player = mc.player
         val screen = McUi.currentScreen(mc)
+        if (localTest() && screen is LeapMenuScreen && screen.liveContainerMenu() == null) {
+            // The debug menu has no container to click, so the leap goes through the debug leap path after the delay.
+            val waited = System.currentTimeMillis() - request.requestedAtMs
+            if (waited >= request.delayMs) {
+                val clazz = LeapRoster.classOf(request.targetName, LeapMenu.settings())
+                LeapMenu.leapTo(LeapPlayer(request.targetName, clazz), null)
+                McUi.setScreen(mc, null)
+                LeapOrientTargets.clear()
+                LeapOrientState.clear()
+                clearRequest()
+            }
+            return
+        }
         val menu = validatedMenu(screen)
         val sameScreen = openedScreen == null || openedScreen === screen
         val sameMenu = openedMenu == null || openedMenu === menu
@@ -158,7 +184,7 @@ object LeapAutoLeapController {
         val player = mc.player
         return LeapAutoLeapPolicy.doorOpenerClick(
             cfg,
-            DungeonListener.state.inDungeon,
+            inDungeon(),
             player != null && inBossRoom(player),
         )
     }
@@ -166,8 +192,8 @@ object LeapAutoLeapController {
     private fun orientEnabledInScope(): Boolean {
         val cfg = LeapMenu.settings()
         val state = DungeonListener.state
-        return cfg.enabled && cfg.orientEnabled && cfg.autoLeapEnabled && state.inDungeon &&
-            (!cfg.autoLeapBossOnly || state.inBoss)
+        return cfg.enabled && cfg.orientEnabled && cfg.autoLeapEnabled && inDungeon() &&
+            (!cfg.autoLeapBossOnly || state.inBoss || localTest())
     }
 
     private fun scopeBlock(): String {
@@ -176,8 +202,9 @@ object LeapAutoLeapController {
             !cfg.enabled -> "blocked: Spirit Leap is disabled"
             !cfg.orientEnabled -> "blocked: orient is off"
             !cfg.autoLeapEnabled -> "blocked: Left-click auto leap is off"
-            cfg.autoLeapBossOnly && !DungeonListener.state.inBoss -> "blocked: auto leap is boss-only and no boss fight detected"
-            else -> "blocked: not in a dungeon"
+            cfg.autoLeapBossOnly && !DungeonListener.state.inBoss && !localTest() -> "blocked: auto leap is boss-only and no boss fight detected"
+            !inDungeon() -> "blocked: not in a dungeon"
+            else -> "blocked: scope changed"
         }
     }
 
@@ -202,6 +229,7 @@ object LeapAutoLeapController {
     }
 
     private fun isSpiritLeap(stack: ItemStack): Boolean {
+        if (localTest() && LeapOrient.isDebugLeapItem(stack)) return true
         val id = HypixelItemData.skyblockId(stack)
         if (id != null) return id.equals("SPIRIT_LEAP", ignoreCase = true)
         return HypixelItemData.matchName(stack)?.equals("spirit leap", ignoreCase = true) == true
