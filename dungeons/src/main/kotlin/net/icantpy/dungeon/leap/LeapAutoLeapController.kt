@@ -283,7 +283,8 @@ object LeapAutoLeapController {
     private fun isSpiritLeap(stack: ItemStack): Boolean {
         if (localTest() && LeapOrient.isDebugLeapItem(stack)) return true
         val id = HypixelItemData.skyblockId(stack)
-        if (id != null) return id.equals("SPIRIT_LEAP", ignoreCase = true)
-        return HypixelItemData.matchName(stack)?.equals("spirit leap", ignoreCase = true) == true
+        if (id != null) return id.equals("SPIRIT_LEAP", ignoreCase = true) || id.equals("INFINITE_SPIRIT_LEAP", ignoreCase = true)
+        val name = HypixelItemData.matchName(stack) ?: return false
+        return name.equals("spirit leap", ignoreCase = true) || name.equals("infinileap", ignoreCase = true)
     }
 }
