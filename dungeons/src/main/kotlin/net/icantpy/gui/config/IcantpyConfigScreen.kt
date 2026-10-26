@@ -2835,6 +2835,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         y = toggleRow(draw, y, "Surface only", "Skip lava that has lava above it, so a pool shows its top layer.", lava.surfaceOnly, last = false) {
             LavaEsp.edit { it.copy(surfaceOnly = !it.surfaceOnly) }
         }
+        y = toggleRow(draw, y, "See through walls", "Draw the outlines on top of terrain, so lava shows behind walls and under floors.", lava.throughWalls, last = false) {
+            LavaEsp.edit { it.copy(throughWalls = !it.throughWalls) }
+        }
         val minId = "lava:minY"
         y = actionRow(draw, y, "Above height (Y)", "Only lava higher than this Y is shown.", last = false) { cy ->
             draw.field(minId, field(minId, lava.minY.toString()), "64", rightX(64), cy, 64, focused == minId)

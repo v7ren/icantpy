@@ -15,6 +15,8 @@ class LavaEspTest {
         assertEquals(LavaEspConfig.MIN_RADIUS, parsed.radiusChunks)
         assertEquals(0xFF0000, parsed.rgb)
         assertEquals(LavaEspConfig(), LavaEspConfig.parse("[]"))
+        assertTrue(LavaEspConfig().throughWalls)
+        assertEquals(false, LavaEspConfig.parse("""{"throughWalls":false}""").throughWalls)
     }
 
     @Test

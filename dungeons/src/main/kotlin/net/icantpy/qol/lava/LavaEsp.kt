@@ -105,13 +105,15 @@ object LavaEsp {
         if (!c.enabled) return
         val list = drawn
         if (list.isEmpty()) return
+        val onTop = c.throughWalls
         val outline = OUTLINE_ALPHA or c.rgb
         val style = GizmoStyle.strokeAndFill(outline, STROKE_WIDTH, FILL_ALPHA or c.rgb)
         for (packed in list) {
             val x = BlockPos.getX(packed).toDouble()
             val y = BlockPos.getY(packed).toDouble()
             val z = BlockPos.getZ(packed).toDouble()
-            Gizmos.cuboid(AABB(x, y, z, x + 1.0, y + 1.0, z + 1.0), style)
+            val gizmo = Gizmos.cuboid(AABB(x, y, z, x + 1.0, y + 1.0, z + 1.0), style)
+            if (onTop) gizmo.setAlwaysOnTop()
         }
     }
 

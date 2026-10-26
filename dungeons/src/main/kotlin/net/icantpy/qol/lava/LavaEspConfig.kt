@@ -16,6 +16,8 @@ data class LavaEspConfig(
     val radiusChunks: Int = DEFAULT_RADIUS,
     /** Highlight only lava with no lava above it, so a deep pool shows its surface instead of every block. */
     val surfaceOnly: Boolean = true,
+    /** Draw on top of walls and terrain instead of being hidden behind them. */
+    val throughWalls: Boolean = true,
     /** Outline colour, 0xRRGGBB. */
     val rgb: Int = DEFAULT_RGB,
 ) {
@@ -42,6 +44,7 @@ data class LavaEspConfig(
                 minY = int(obj, "minY", d.minY).coerceIn(MIN_Y_LIMIT, MAX_Y_LIMIT),
                 radiusChunks = int(obj, "radiusChunks", d.radiusChunks).coerceIn(MIN_RADIUS, MAX_RADIUS),
                 surfaceOnly = bool(obj, "surfaceOnly", d.surfaceOnly),
+                throughWalls = bool(obj, "throughWalls", d.throughWalls),
                 rgb = int(obj, "rgb", d.rgb) and 0xFFFFFF,
             )
         }
@@ -80,6 +83,7 @@ object LavaEspStore {
                     "minY" to config.minY,
                     "radiusChunks" to config.radiusChunks,
                     "surfaceOnly" to config.surfaceOnly,
+                    "throughWalls" to config.throughWalls,
                     "rgb" to config.rgb,
                 ),
             ) + "\n"
