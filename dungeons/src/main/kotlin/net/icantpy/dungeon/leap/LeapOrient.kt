@@ -775,7 +775,7 @@ object LeapOrient {
         val expected = LeapOrientTargets.pick(LeapGameState.currentId(), cfg)?.centerTitle() ?: "none armed"
         flow("you leaped to $leaped (${clazz.displayName}); armed target was: $expected")
         val unlocked = LeapTriggerLockState.markCompleted(clazz)
-        if (cfg.leapAnnounce && (DungeonListener.state.inDungeon || debugActive())) {
+        if (cfg.leapAnnounce && (DungeonListener.state.inDungeon || debugActive()) && !mc.hasSingleplayerServer()) {
             val line = LeapChatPatterns.formatAnnounce(cfg.announceTemplate, leaped, clazz)
             lastAnnounce = line
             lastAnnounceAt = System.currentTimeMillis()
