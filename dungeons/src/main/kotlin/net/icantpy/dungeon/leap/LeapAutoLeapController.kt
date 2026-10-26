@@ -69,7 +69,7 @@ object LeapAutoLeapController {
             return false
         }
         // Left click only leaps to the oriented center target. With none, it does nothing; right-click opens the menu.
-        val target = LeapMenu.centerPlayer(LeapRoster.knownPlayers())
+        val target = LeapMenu.centerPlayer(LeapRoster.knownPlayers(), liveOnly = true)
         if (target == null) {
             LeapOrient.flow("left click ignored: no center target is leap-oriented, so there is nothing to auto leap to")
             return noted("no oriented target, left click ignored")
