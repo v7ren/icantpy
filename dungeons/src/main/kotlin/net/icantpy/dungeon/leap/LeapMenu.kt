@@ -266,7 +266,7 @@ object LeapMenu {
         return leapHeadSlots(menu).mapNotNull { slot ->
             val name = headName(slot.item.hoverName.string) ?: return@mapNotNull null
             odin.firstOrNull { it.name.equals(name, ignoreCase = true) }
-                ?: LeapPlayer(name, LeapDungeonClass.MAGE)
+                ?: LeapPlayer(name, LeapRoster.classOf(name, settings()).takeIf { it.isReal() } ?: LeapDungeonClass.MAGE)
         }
     }
 
