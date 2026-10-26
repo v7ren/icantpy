@@ -249,6 +249,10 @@ object LeapOrient {
 
     fun onDebugLeap(name: String) {
         tell("§a[debug] leaped to $name")
+        // In a local test world the dummy players are mannequins; a typed /tp (cheats) walks to the matching one.
+        if (mc.hasSingleplayerServer() && name.startsWith("dbg")) {
+            IcantpyClientActions.sendCommand("tp @s @e[type=mannequin,name=$name,limit=1]")
+        }
         onIncomingChat("You have teleported to $name!")
     }
 
