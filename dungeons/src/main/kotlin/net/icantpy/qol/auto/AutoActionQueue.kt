@@ -427,8 +427,12 @@ object AutoActionQueue {
             return
         }
         if (!canSendCommands()) return
+        net.icantpy.dungeon.leap.LeapOrient.flow("auto loadout $number is starting now (Hypixel: sends /loadout, waits for the menu, clicks Loadout $number)")
         // Already equipped: the step counts as finished and the batch moves on to its next step.
-        if (Loadout.skipIfAlreadyEquipped(number)) return
+        if (Loadout.skipIfAlreadyEquipped(number)) {
+            net.icantpy.dungeon.leap.LeapOrient.flow("auto loadout $number: already equipped, nothing to do")
+            return
+        }
         val run = LoadoutAutoRun(number, pacing(), InvSortController.settings.moveCursor, InvSortController.settings.safetyLevel, nowMs)
         activeRun = ActiveRun(run, batchId, label(AutoActionKind.SWITCH_LOADOUT))
         if (Minecraft.getInstance().hasSingleplayerServer()) {

@@ -67,6 +67,11 @@ object LeapTriggerLockState {
         return ready
     }
 
+    /** Plain-text list of everything still parked: whole cards and single rows, with the leap each one needs. */
+    fun waitingLines(labelOf: (LeapAutoStep) -> String): List<String> =
+        deferred.values.map { "card '${it.trigger.title()}' <- leap to ${it.trigger.requiresTargetClass.displayName}" } +
+            deferredSteps.map { "${labelOf(it.step)} <- leap to ${it.step.requires.displayName}" }
+
     fun completed(): Set<LeapDungeonClass> = completedTargets.toSet()
 
     fun deferredCount(): Int = deferred.size + deferredSteps.size

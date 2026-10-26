@@ -772,6 +772,8 @@ object LeapOrient {
         val consumedPyTank = LeapGameState.leapPhase() == LeapPhase.P2 &&
             LeapRoster.selfClass(cfg) == LeapDungeonClass.MAGE && clazz == LeapDungeonClass.TANK
         if (consumedPyTank) pyTankLeaped = true
+        val expected = LeapOrientTargets.pick(LeapGameState.currentId(), cfg)?.centerTitle() ?: "none armed"
+        flow("you leaped to $leaped (${clazz.displayName}); armed target was: $expected")
         val unlocked = LeapTriggerLockState.markCompleted(clazz)
         if (cfg.leapAnnounce && (DungeonListener.state.inDungeon || debugActive())) {
             val line = LeapChatPatterns.formatAnnounce(cfg.announceTemplate, leaped, clazz)
@@ -794,7 +796,11 @@ object LeapOrient {
         LeapTriggerLockState.takeSteps(clazz).forEach { waiting ->
             val current = cfg.triggers.firstOrNull { it.id == waiting.trigger.id } ?: return@forEach
             val step = waiting.step.copy(requires = LeapDungeonClass.EMPTY, branch = LeapBranch.ALWAYS, conditions = emptyList())
+            flow("${stepLabel(waiting.step)}: RELEASED, the leap to ${clazz.displayName} it waited for just happened (card '${current.title()}')")
             applyAutoSteps(current.copy(steps = listOf(step)), waiting.sender, waiting.message, keySuffix = "#after-${clazz.name}")
+        }
+        LeapTriggerLockState.waitingLines { stepLabel(it) }.let { lines ->
+            if (lines.isNotEmpty()) flow("still waiting: " + lines.joinToString("; "))
         }
     }
 
@@ -819,6 +825,11 @@ object LeapOrient {
             val steps = LeapConditions.active(trigger.steps, currentFacts()).filter {
                 LeapAutoStepList.isLeapRow(it) || LeapTriggerLockState.isSatisfiedByLeap(it, leaped.asClass)
             }
+            flow(
+                "chain card '${trigger.title()}' fired by your leap to ${leaped.asClass?.displayName ?: leaped.rawTarget}; running " +
+                    (steps.joinToString(" | ") { stepLabel(it) }.ifBlank { "no rows" }) +
+                    " (${trigger.steps.size - steps.size} skipped by requirement or condition)",
+            )
             applyAutoSteps(trigger.copy(steps = steps), selfName ?: "you", trigger.title())
         }
     }
@@ -1122,9 +1133,16 @@ object LeapOrient {
             val dropped = trigger.steps.size - steps.size
             record(sender, message, true, false, "conditions skipped $dropped step${if (dropped == 1) "" else "s"}")
         }
+        flow(
+            "card '${trigger.title()}' fired by ${event.label()} (from $sender). Rows: " +
+                live.steps.joinToString(" | ") { step ->
+                    stepLabel(step) + step.requires.takeIf { it.isReal() }?.let { " [needs a leap to ${it.displayName}]" }.orEmpty()
+                }.ifBlank { "none" },
+        )
         // A locked leap waits as a whole card, so its auto steps also wait for the prerequisite leap.
         if (live.armLeap && !LeapTriggerLockState.isSatisfied(live)) {
             LeapTriggerLockState.defer(DeferredLeapTrigger(trigger, event, sender, leaped, message))
+            flow("card '${trigger.title()}' is WAITING on a leap to ${trigger.requiresTargetClass.displayName} before it arms its target or runs any row")
             record(
                 sender,
                 message,
@@ -1143,12 +1161,17 @@ object LeapOrient {
             LeapAutoStepList.isLeapRow(it) ||
                 if (byThisLeap) LeapTriggerLockState.isSatisfiedByLeap(it, leaped.asClass) else !it.requires.isReal()
         }
+        ready.forEach { step ->
+            if (!LeapAutoStepList.isLeapRow(step)) flow("${stepLabel(step)}: no leap required, runs now")
+        }
         waiting.forEach { step ->
             if (byThisLeap) {
+                flow("${stepLabel(step)}: SKIPPED, this leap was to ${leaped?.asClass?.displayName ?: "an unknown class"} but the row needs ${step.requires.displayName}")
                 record(sender, message, true, false, "${step.label(StatsArmor.presetLabels())} needs a leap to ${step.requires.displayName}")
                 return@forEach
             }
             LeapTriggerLockState.deferStep(DeferredLeapStep(live, step, sender, message))
+            flow("${stepLabel(step)}: WAITING for your next leap to ${step.requires.displayName} (Hypixel: runs right after you teleport to the ${step.requires.displayName})")
             record(sender, message, true, false, "${step.label(StatsArmor.presetLabels())} waits for leap to ${step.requires.displayName}")
         }
         applyAutoSteps(live.copy(steps = ready), sender, message)
@@ -1187,15 +1210,18 @@ object LeapOrient {
             playerForClass = { clazz -> LeapRoster.playerForClass(clazz, LeapRoster.knownPlayers()) },
             context = routeContext(),
         ) ?: run {
+            flow("leap target for '${trigger.title()}': NONE found (no player of the wanted class is known); nothing armed, so left-click leap has no target")
             record(sender, message, true, false, "target missing")
             return
         }
         if (LeapOrientEngine.duplicateClassUnsafe(request.targetClass ?: LeapDungeonClass.EMPTY, routeContext()) &&
             request.targetName.isBlank()
         ) {
+            flow("leap target for '${trigger.title()}': two players share that class, refusing to guess")
             record(sender, message, true, false, "duplicate class needs player")
             return
         }
+        flow("leap target for '${trigger.title()}': ${request.targetName.ifBlank { request.targetClass?.displayName ?: "?" }} (${request.targetClass?.displayName ?: "unknown class"}); left-click leap will go there")
         val armed = armRequest(request, sender, message, keywordHit = true) ?: return
         LeapFollowUps.register(trigger, armed, request.targetName, request.targetClass)
     }
@@ -1277,6 +1303,10 @@ object LeapOrient {
             return
         }
         val queued = AutoActionQueue.requestBatch(key, route.targets, trigger.title())
+        flow(
+            if (queued) "queued now: ${trigger.stepLabels(StatsArmor.presetLabels()).joinToString(" -> ")} (Hypixel: each one sends its command, waits for its menu, then clicks)"
+            else "NOT queued (already queued or repeated): ${trigger.stepLabels(StatsArmor.presetLabels()).joinToString(" -> ")}",
+        )
         val detail = if (queued) trigger.stepLabels(StatsArmor.presetLabels()).joinToString(" → ") else "already queued or repeated"
         record(sender, message, true, queued, detail)
     }
@@ -1360,6 +1390,28 @@ object LeapOrient {
         lastAutoLeapNote = detail
         record("auto leap", "left click", true, false, detail)
     }
+
+    /**
+     * Debug narration of what the card pipeline did and what it is waiting on, including what the same step would do on
+     * Hypixel. Printed to chat and the chat-debug HUD while leaporient debug is on.
+     */
+    fun flow(text: String) {
+        if (!debugActive()) return
+        LeapOrientChatDebug.record(
+            LeapOrientChatDebug.Entry(
+                sender = "flow",
+                message = text,
+                keywordHit = true,
+                selfOk = true,
+                senderOk = true,
+                armed = true,
+                detail = "",
+            ),
+        )
+        tell("§b[flow] §f$text")
+    }
+
+    private fun stepLabel(step: LeapAutoStep): String = step.label(StatsArmor.presetLabels())
 
     private fun record(sender: String, message: String, keywordHit: Boolean, armed: Boolean, detail: String) {
         val entry = LeapOrientChatDebug.Entry(
