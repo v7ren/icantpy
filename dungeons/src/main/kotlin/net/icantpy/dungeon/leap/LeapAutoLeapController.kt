@@ -240,7 +240,7 @@ object LeapAutoLeapController {
         val cfg = LeapMenu.settings()
         val state = DungeonListener.state
         return cfg.enabled && cfg.orientEnabled && cfg.autoLeapEnabled && inDungeon() &&
-            (!cfg.autoLeapBossOnly || state.inBoss || localTest())
+            (!cfg.autoLeapBossOnly || inBossFight() || localTest())
     }
 
     private fun scopeBlock(): String {
@@ -249,7 +249,7 @@ object LeapAutoLeapController {
             !cfg.enabled -> "blocked: Spirit Leap is disabled"
             !cfg.orientEnabled -> "blocked: orient is off"
             !cfg.autoLeapEnabled -> "blocked: Left-click auto leap is off"
-            cfg.autoLeapBossOnly && !DungeonListener.state.inBoss && !localTest() -> "blocked: auto leap is boss-only and no boss fight detected"
+            cfg.autoLeapBossOnly && !inBossFight() && !localTest() -> "blocked: auto leap is boss-only and no boss fight detected"
             !inDungeon() -> "blocked: not in a dungeon"
             else -> "blocked: scope changed"
         }
@@ -257,7 +257,11 @@ object LeapAutoLeapController {
 
     private fun scopeId(doorOpener: Boolean): String =
         if (doorOpener) "door:${DungeonListener.state.inDungeon}"
-        else "orient:${DungeonListener.state.inBoss}:${LeapGameState.currentId()}"
+        else "orient:${inBossFight()}:${LeapGameState.currentId()}"
+
+    /** The boss fight flag, or standing inside the boss room, so one missed detection does not block left click. */
+    private fun inBossFight(): Boolean =
+        DungeonListener.state.inBoss || mc.player?.let { inBossRoom(it) } == true
 
     private fun inBossRoom(player: net.minecraft.world.entity.player.Player): Boolean =
         BossRooms.contains(DungeonListener.floor, player.x, player.z)
