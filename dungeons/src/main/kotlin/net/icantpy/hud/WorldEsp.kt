@@ -19,6 +19,7 @@ object WorldEsp {
         net.icantpy.slayer.blaze.FirePit.renderWorld()
         net.icantpy.slayer.aim.BossAim.renderWorld()
         net.icantpy.qol.path.Navigator.renderWorld()
+        net.icantpy.qol.lava.LavaEsp.renderWorld()
     }
 
     /** Outlines of living or spawning wither dragons. The tracker's boxes are empty outside P5. */

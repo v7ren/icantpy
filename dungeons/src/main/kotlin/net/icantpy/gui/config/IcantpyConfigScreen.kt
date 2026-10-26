@@ -7,12 +7,16 @@ import net.icantpy.gui.SkiaContext
 import net.icantpy.gui.SkiaSurface
 import net.icantpy.gui.clampScroll
 import net.icantpy.cosmetics.items.CustomRename
+import net.icantpy.qol.camera.Freecam
+import net.icantpy.qol.camera.FreecamConfig
 import net.icantpy.qol.camera.Freelook
 import net.icantpy.qol.camera.FreelookConfig
 import net.icantpy.qol.visual.AmbientStyle
 import net.icantpy.qol.visual.HandShaderMode
 import net.icantpy.qol.visual.SwingMode
 import net.icantpy.qol.visual.TrailStyle
+import net.icantpy.qol.lava.LavaEsp
+import net.icantpy.qol.lava.LavaEspConfig
 import net.icantpy.qol.visual.Visuals
 import net.icantpy.qol.visual.VisualsConfig
 import net.icantpy.qol.perf.Culling
@@ -2505,6 +2509,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             PetSwap.edit { config -> config.withPet(index) { it.copy(key = key) } }
             return
         }
+        if (id == "freecamKey") {
+            Freecam.edit { it.copy(key = if (code <= 0) FreecamConfig.UNBOUND else code) }
+            return
+        }
         if (id == "freelookKey") {
             Freelook.setKey(code)
             return
@@ -2593,11 +2601,36 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        return note(
+        y = note(
             draw,
             y,
             "Options → Controls → icantpy → Freelook. Hold: look while the key is down. Toggle: tap on, tap off. Hold or toggle: tap latches, a longer press peeks until you release.",
         )
+        return drawFreecam(draw, y)
+    }
+
+    private fun drawFreecam(draw: MenuDraw, startY: Int): Int {
+        val cam = Freecam.config
+        var y = section(
+            draw,
+            startY + SECTION_GAP,
+            "Freecam",
+            "Fly the camera away from your character. The character stands still and sends what an idle player sends; only the picture moves. You only see chunks and entities the server already sent. WASD fly, Space up, Shift down, Sprint is faster.",
+        )
+        y = toggleRow(draw, y, "Enabled", "Allow the freecam key below.", cam.enabled, last = false) {
+            Freecam.edit { it.copy(enabled = !it.enabled) }
+        }
+        y = bindRow(draw, y, "Toggle key", "freecamKey", cam.key, last = false)
+        val speedId = "freecam:speed"
+        y = actionRow(draw, y, "Speed (blocks/s)", "Fly speed; Sprint triples it.", last = false) { cy ->
+            draw.field(speedId, field(speedId, cam.speed.toString()), "15", rightX(64), cy, 64, focused == speedId)
+        }
+        y = toggleRow(draw, y, "Block clicks", "Attack and use are ignored while flying, so nothing is hit by accident.", cam.blockClicks, last = false) {
+            Freecam.edit { it.copy(blockClicks = !it.blockClicks) }
+        }
+        return toggleRow(draw, y, "Stop when hurt", "Leaves freecam as soon as you take damage.", cam.stopOnHurt, last = true) {
+            Freecam.edit { it.copy(stopOnHurt = !it.stopOnHurt) }
+        }
     }
 
     /** One on/off setting on a Visuals subtab. [read] and [write] take the live config, so clicks never use a stale copy. */
@@ -2785,7 +2818,31 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             nearestIndex(fogScales, c.fogDistance),
             true,
         ) { index -> Visuals.edit { it.copy(fogDistance = fogScales[index]) } }
-        return y + 8
+        return drawLavaEsp(draw, y + 8)
+    }
+
+    private fun drawLavaEsp(draw: MenuDraw, startY: Int): Int {
+        val lava = LavaEsp.config
+        var y = section(
+            draw,
+            startY,
+            "Lava highlight",
+            "Outlines lava above a height in the chunks the server already sent. Only your client's loaded chunks are read, so nothing is requested.",
+        )
+        y = toggleRow(draw, y, "Enabled", "Highlight lava blocks.", lava.enabled, last = false) {
+            LavaEsp.edit { it.copy(enabled = !it.enabled) }
+        }
+        y = toggleRow(draw, y, "Surface only", "Skip lava that has lava above it, so a pool shows its top layer.", lava.surfaceOnly, last = false) {
+            LavaEsp.edit { it.copy(surfaceOnly = !it.surfaceOnly) }
+        }
+        val minId = "lava:minY"
+        y = actionRow(draw, y, "Above height (Y)", "Only lava higher than this Y is shown.", last = false) { cy ->
+            draw.field(minId, field(minId, lava.minY.toString()), "64", rightX(64), cy, 64, focused == minId)
+        }
+        val radiusId = "lava:radius"
+        return actionRow(draw, y, "Radius (chunks)", "How far around you loaded chunks are scanned. " + LavaEsp.count() + " blocks shown.", last = true) { cy ->
+            draw.field(radiusId, field(radiusId, lava.radiusChunks.toString()), "8", rightX(64), cy, 64, focused == radiusId)
+        }
     }
 
     private fun drawVisualsCamera(draw: MenuDraw, startY: Int): Int {
@@ -4910,6 +4967,15 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             }
             id == "pet:delayMax" -> value.trim().toIntOrNull()?.coerceIn(0, PetSwapConfig.MAX_DELAY_MS)?.let { ms ->
                 PetSwap.edit { it.copy(delayMaxMs = ms, delayMinMs = minOf(it.delayMinMs, ms)) }
+            }
+            id == "freecam:speed" -> value.trim().toFloatOrNull()?.let { speed ->
+                Freecam.edit { it.copy(speed = speed.coerceIn(FreecamConfig.MIN_SPEED, FreecamConfig.MAX_SPEED)) }
+            }
+            id == "lava:minY" -> value.trim().toIntOrNull()?.let { y ->
+                LavaEsp.edit { it.copy(minY = y.coerceIn(LavaEspConfig.MIN_Y_LIMIT, LavaEspConfig.MAX_Y_LIMIT)) }
+            }
+            id == "lava:radius" -> value.trim().toIntOrNull()?.let { r ->
+                LavaEsp.edit { it.copy(radiusChunks = r.coerceIn(LavaEspConfig.MIN_RADIUS, LavaEspConfig.MAX_RADIUS)) }
             }
             id.startsWith("fish:") -> applyFishingField(id, value)
             id == "pet:castName" ->PetSwap.edit { it.copy(castPet = PetMenu.cleanTarget(value)) }

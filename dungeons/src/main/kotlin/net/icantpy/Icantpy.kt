@@ -16,6 +16,8 @@ import net.icantpy.cosmetics.items.AppearanceOwnerScope
 import net.icantpy.cosmetics.items.CustomCosmeticsShare
 import net.icantpy.cosmetics.items.CustomRename
 import net.icantpy.cosmetics.items.CustomRenameEditorSession
+import net.icantpy.qol.camera.Freecam
+import net.icantpy.qol.lava.LavaEsp
 import net.icantpy.qol.camera.Freelook
 import net.icantpy.qol.fishing.FishingMacro
 import net.icantpy.qol.pets.PetSwap
@@ -106,6 +108,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         loadDragons()
         CustomRename.load()
         Freelook.load()
+        Freecam.load()
+        LavaEsp.load()
         PetSwap.load()
         FishingMacro.load()
         MotionBlur.load()
@@ -138,6 +142,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         InvSortController.onUnload()
         CustomRename.clearTransientCache()
         Freelook.onUnload()
+        Freecam.onUnload()
+        LavaEsp.reset()
         MotionBlur.unload()
         FrameGen.unload()
         PerfHud.unload()
@@ -301,7 +307,9 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         CustomCosmeticsShare.tick()
         HeadTextures.tick()
         Freelook.tick()
+        Freecam.tick()
         Visuals.tick()
+        LavaEsp.tick()
         FirePit.tick()
         BossAim.tick()
         BossStrafe.tick()
@@ -339,6 +347,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         MaskTimers.onDisconnect()
         PlayerDisguise.onDisconnect()
         Freelook.onUnload()
+        Freecam.onUnload()
+        LavaEsp.reset()
         if (CustomRenameEditorSession.current() != null) CustomRename.persist()
         CustomRenameEditorSession.close()
         CustomRename.clearTransientCache()
@@ -399,6 +409,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         }
         if (event.id == "lifecycle.start_tick") {
             Freelook.tick()
+            Freecam.tick()
             QuaziiBeamDodge.startTick()
             return IcantpyDispatchResult.PASS
         }
@@ -407,6 +418,14 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
     }
 
     override fun query(query: IcantpyRuntimeQuery): IcantpyQueryResult {
+        if (Freecam.blocksClicks()) {
+            // While the camera flies, the body must not attack or use what it happens to face.
+            when (query.id) {
+                "input.attack.start" -> return IcantpyQueryResult(IcantpyDispatchResult.HANDLED, false)
+                "input.attack.pre" -> return IcantpyQueryResult(IcantpyDispatchResult.HANDLED, true)
+                "input.use.start" -> return IcantpyQueryResult(IcantpyDispatchResult.HANDLED)
+            }
+        }
         if (query.id == "input.attack.start" || query.id == "input.attack.pre") {
             BossStrafe.onAttack()
             val clickCount = (query.context["clickCount"] as? Number)?.toInt() ?: 1
@@ -435,13 +454,15 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             }
         }
         if (query.id == "input.player.turn") {
-            val consumed = Freelook.consumeTurn(query.context["yaw"], query.context["pitch"])
+            val consumed = Freecam.consumeTurn(query.context["yaw"], query.context["pitch"]) ||
+                Freelook.consumeTurn(query.context["yaw"], query.context["pitch"])
             return if (consumed) IcantpyQueryResult(IcantpyDispatchResult.HANDLED, true)
             else IcantpyQueryResult(IcantpyDispatchResult.PASS)
         }
         if (query.id == "render.camera.look_direction") {
             val camera = query.context["camera"] as? net.minecraft.client.Camera
                 ?: return IcantpyQueryResult(IcantpyDispatchResult.PASS)
+            Freecam.queryLook(camera)?.let { return it }
             val freelook = Freelook.queryLook(camera)
             if (freelook.result != IcantpyDispatchResult.PASS) return freelook
             return MorphCameraLook.query(camera)
@@ -579,6 +600,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         loadDragons()
         CustomRename.load()
         Freelook.load()
+        Freecam.load()
+        LavaEsp.load()
         PetSwap.load()
         FishingMacro.load()
         MotionBlur.load()
@@ -623,7 +646,9 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             CustomCosmeticsShare.tick()
             HeadTextures.tick()
             Freelook.tick()
+            Freecam.tick()
             Visuals.tick()
+            LavaEsp.tick()
             FirePit.tick()
             BossAim.tick()
             BossStrafe.tick()
