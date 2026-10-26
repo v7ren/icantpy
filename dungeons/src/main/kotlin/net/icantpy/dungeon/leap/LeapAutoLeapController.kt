@@ -149,6 +149,7 @@ object LeapAutoLeapController {
             namedTargetSlot = targetSlot,
         )
         val result = LeapAutoLeapState.advance(request, frame)
+        narrate(request, frame, result, screen)
         pending = result.pending
         if (result.pending?.openedAtMs != null && openedScreen == null) {
             openedScreen = screen
@@ -164,6 +165,34 @@ object LeapAutoLeapController {
             }
         }
         if (pending == null) clearRequest()
+    }
+
+    private var lastNarration = ""
+
+    /** Debug narration of where an auto leap is, and why it was dropped when it ends without a click. */
+    private fun narrate(request: PendingAutoLeap, frame: LeapAutoLeapFrame, result: LeapAutoLeapStep, screen: Screen?) {
+        if (!LeapOrient.debugActive()) return
+        val shown = "${screen?.javaClass?.simpleName ?: "no screen"} \"${screen?.title?.string.orEmpty()}\""
+        val text = when {
+            result.clickSlot != null -> "auto leap: clicking ${request.targetName} (slot ${result.clickSlot})"
+            result.pending == null -> "auto leap to ${request.targetName} DROPPED: ${dropReason(request, frame, shown)}"
+            else -> "auto leap waiting: $shown, menu validated=${frame.validatedLeapMenu}, head ${request.targetName} slot=${frame.namedTargetSlot}"
+        }
+        if (text == lastNarration) return
+        lastNarration = text
+        LeapOrient.flow(text)
+    }
+
+    private fun dropReason(request: PendingAutoLeap, frame: LeapAutoLeapFrame, shown: String): String = when {
+        !frame.connected -> "not connected"
+        !frame.enabledInScope -> "auto leap is no longer enabled for this scope (boss-only, orient or dungeon check)"
+        !frame.itemUnchanged -> "the held item or hotbar slot changed"
+        request.scopeId != frame.scopeId -> "scope changed (${request.scopeId} -> ${frame.scopeId})"
+        request.openedAtMs == null && frame.nowMs - request.requestedAtMs >= LeapAutoLeapState.OPEN_TIMEOUT_MS ->
+            "no Spirit Leap menu opened within ${LeapAutoLeapState.OPEN_TIMEOUT_MS}ms (screen: $shown)"
+        request.openedAtMs == null -> "the open screen is not a Spirit Leap menu the mod can click ($shown)"
+        frame.screenId != request.screenId || frame.menuId != request.menuId -> "the menu screen changed after it opened ($shown)"
+        else -> "head ${request.targetName} never appeared in the menu within ${request.delayMs + LeapAutoLeapState.MENU_TIMEOUT_MS}ms"
     }
 
     fun clear() {
@@ -221,7 +250,8 @@ object LeapAutoLeapController {
         val menu = when (screen) {
             is LeapMenuScreen -> screen.liveContainerMenu()
             is AbstractContainerScreen<*> -> screen.menu
-            else -> null
+            // Another mod's own Spirit Leap screen: the real container is still the player's open menu.
+            else -> mc.player?.containerMenu?.takeIf { it !== mc.player?.inventoryMenu && LeapMenu.isLeapTitle(screen?.title?.string.orEmpty()) }
         } ?: return null
         val title = Text.strip(screen?.title?.string ?: return null).trim()
         if (!title.equals("Spirit Leap", ignoreCase = true) &&
