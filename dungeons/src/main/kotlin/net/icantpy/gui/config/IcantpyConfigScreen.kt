@@ -1199,10 +1199,20 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 draw.field(id, field(id, leap.menuOpacity.toString()), "100", rightX(48), cy, 48, focused == id)
             }
         }
-        y = grouped(draw, y, 2) { rowY, index ->
+        y = grouped(draw, y, 4) { rowY, index ->
             if (index == 0) {
                 toggleRow(draw, rowY, "Lock HUD", "Show who / zone / reason on screen, including the latest door opener.", leap.showLockHud, false) {
                     TickTimers.updateLeap { it.copy(showLockHud = !it.showLockHud) }
+                }
+            } else if (index == 1) {
+                val xId = "leap:lockHudX"
+                actionRow(draw, rowY, "Lock HUD X", "Pixels right (+) or left (-) of the default centered spot.", last = false) { cy ->
+                    draw.field(xId, field(xId, leap.lockHudX.toString()), "0", rightX(64), cy, 64, focused == xId)
+                }
+            } else if (index == 2) {
+                val yId = "leap:lockHudY"
+                actionRow(draw, rowY, "Lock HUD Y", "Pixels down (+) or up (-) from the default spot above the hotbar.", last = false) { cy ->
+                    draw.field(yId, field(yId, leap.lockHudY.toString()), "0", rightX(64), cy, 64, focused == yId)
                 }
             } else {
                 toggleRow(
@@ -4957,6 +4967,12 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             }
             id == "leap:autoDelay" -> value.toIntOrNull()?.coerceIn(0, 2000)?.let { delay ->
                 TickTimers.updateLeap { it.copy(autoLeapDelayMs = delay) }
+            }
+            id == "leap:lockHudX" -> value.trim().toIntOrNull()?.coerceIn(-2000, 2000)?.let { px ->
+                TickTimers.updateLeap { it.copy(lockHudX = px) }
+            }
+            id == "leap:lockHudY" -> value.trim().toIntOrNull()?.coerceIn(-2000, 2000)?.let { px ->
+                TickTimers.updateLeap { it.copy(lockHudY = px) }
             }
             id == "leap:opacity" -> value.toIntOrNull()?.coerceIn(0, 100)?.let { opacity ->
                 TickTimers.updateLeap { it.copy(menuOpacity = opacity) }

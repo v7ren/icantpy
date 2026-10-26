@@ -119,10 +119,11 @@ object IcantpyHud {
         val lines = LeapOrient.hudText()
         if (lines.isEmpty()) return
         val window = mc.window
-        var y = window.guiScaledHeight - 48 - (lines.size - 1) * 10
+        val leap = TickTimers.settings.leap
+        var y = window.guiScaledHeight - 48 - (lines.size - 1) * 10 + leap.lockHudY
         lines.forEach { text ->
             val width = mc.font.width(HudText.plain(text))
-            val x = (window.guiScaledWidth - width) / 2
+            val x = (window.guiScaledWidth - width) / 2 + leap.lockHudX
             graphics.text(mc.font, text, x, y, 0xFFFFFFFF.toInt(), true)
             y += 10
         }

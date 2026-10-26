@@ -45,6 +45,9 @@ data class LeapOrientSettings(
     val durationSeconds: Int = 10,
     val keyword: String = "[icantpy]",
     val showLockHud: Boolean = true,
+    /** Lock HUD position, in gui pixels from its default spot (centered, just above the hotbar). */
+    val lockHudX: Int = 0,
+    val lockHudY: Int = 0,
     val showBossDeathNotifier: Boolean = true,
     val showChatDebugHud: Boolean = true,
     val showChatDebugMessages: Boolean = false,
@@ -242,6 +245,8 @@ data class LeapOrientSettings(
                 durationSeconds = LeapTriggerJson.int(obj, "durationSeconds", defaults.durationSeconds).coerceIn(1, 60),
                 keyword = LeapTriggerJson.string(obj, "keyword", defaults.keyword).ifBlank { defaults.keyword },
                 showLockHud = LeapTriggerJson.bool(obj, "showLockHud", defaults.showLockHud),
+                lockHudX = LeapTriggerJson.int(obj, "lockHudX", defaults.lockHudX).coerceIn(-2000, 2000),
+                lockHudY = LeapTriggerJson.int(obj, "lockHudY", defaults.lockHudY).coerceIn(-2000, 2000),
                 showBossDeathNotifier = LeapTriggerJson.bool(
                     obj,
                     "showBossDeathNotifier",
@@ -306,6 +311,8 @@ data class LeapOrientSettings(
             obj.addProperty("durationSeconds", settings.durationSeconds)
             obj.addProperty("keyword", settings.keyword)
             obj.addProperty("showLockHud", settings.showLockHud)
+            obj.addProperty("lockHudX", settings.lockHudX)
+            obj.addProperty("lockHudY", settings.lockHudY)
             obj.addProperty("showBossDeathNotifier", settings.showBossDeathNotifier)
             obj.addProperty("showChatDebugHud", settings.showChatDebugHud)
             obj.addProperty("showChatDebugMessages", settings.showChatDebugMessages)
