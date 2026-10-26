@@ -1402,6 +1402,8 @@ object LeapOrient {
      */
     fun flow(text: String) {
         if (!debugActive()) return
+        // Always in the game log, so a run can be read back afterwards even with the chat lines switched off.
+        net.icantpy.Icantpy.LOGGER.info("[leap flow] $text")
         LeapOrientChatDebug.record(
             LeapOrientChatDebug.Entry(
                 sender = "flow",
