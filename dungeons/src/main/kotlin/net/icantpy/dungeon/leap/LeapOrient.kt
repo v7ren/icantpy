@@ -1458,7 +1458,7 @@ object LeapOrient {
     private fun giveDebugItem(): String {
         if (!canUseDebugCommands()) return "leaporient item requires debug"
         val player = mc.player ?: return "no player"
-        val stack = ItemStack(Items.ENDER_PEARL)
+        val stack = ItemStack(Items.WITHER_SKELETON_SKULL)
         stack.set(DataComponents.CUSTOM_NAME, Component.literal("§5Spirit Leap"))
         player.inventory.add(stack)
         return "gave debug Spirit Leap item"
