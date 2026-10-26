@@ -63,15 +63,17 @@ object LeapAutoLeapController {
             LeapOrient.noteAutoLeap(scopeBlock())
             return false
         }
+        // Left click only leaps to the oriented center target. With none, it does nothing; right-click opens the menu.
         val target = LeapMenu.centerPlayer(LeapRoster.knownPlayers())
         if (target == null) {
-            LeapOrient.noteAutoLeap("no oriented target, opened menu")
-            return openManualMenu()
+            LeapOrient.flow("left click ignored: no center target is leap-oriented, so there is nothing to auto leap to")
+            return noted("no oriented target, left click ignored")
         }
         if (target.isDead || LeapRoster.isSelf(target.name)) {
-            LeapOrient.noteAutoLeap("target ${target.name} dead or self, opened menu")
-            return openManualMenu()
+            LeapOrient.flow("left click ignored: center target ${target.name} is dead or you")
+            return noted("target ${target.name} dead or self, left click ignored")
         }
+        LeapOrient.flow("left click: opening Spirit Leap and clicking the center target ${target.name} (${target.clazz.displayName}) after ${LeapMenu.settings().autoLeapDelayMs}ms")
         LeapOrient.noteAutoLeap("leaping to ${target.name}")
         return requestTarget(target.name, doorOpener = false)
     }
