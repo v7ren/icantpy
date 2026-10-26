@@ -21,7 +21,7 @@ class PetAutoRun(
 ) : AutoMenuRun(
     label = "Pet swap",
     isMenuTitle = PetMenu::isPetsTitle,
-    openDeadlineMs = startedMs + AutoMenuRun.RESPONSE_TIMEOUT_MS,
+    openDeadlineMs = startedMs + AutoMenuRun.openWaitMs(),
     timing = timing,
     moveCursor = moveCursor,
     safety = safety,

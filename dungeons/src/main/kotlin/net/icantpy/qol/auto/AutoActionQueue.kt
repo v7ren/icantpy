@@ -431,6 +431,10 @@ object AutoActionQueue {
         if (Loadout.skipIfAlreadyEquipped(number)) return
         val run = LoadoutAutoRun(number, pacing(), InvSortController.settings.moveCursor, InvSortController.settings.safetyLevel, nowMs)
         activeRun = ActiveRun(run, batchId, label(AutoActionKind.SWITCH_LOADOUT))
+        if (Minecraft.getInstance().hasSingleplayerServer()) {
+            say("Auto loadout: singleplayer has no /loadout; right-click the Loadouts chest within ${AutoMenuRun.LOCAL_OPEN_WAIT_MS / 1000}s")
+            return
+        }
         IcantpyClientActions.sendCommand("loadout")
     }
 

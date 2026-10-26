@@ -20,7 +20,7 @@ class StatsAutoRun(
 ) : AutoMenuRun(
     label = "Auto stats",
     isMenuTitle = StatsArmor::isStatsTitle,
-    openDeadlineMs = startedMs + AutoMenuRun.RESPONSE_TIMEOUT_MS,
+    openDeadlineMs = startedMs + AutoMenuRun.openWaitMs(),
     timing = timing,
     moveCursor = moveCursor,
     safety = safety,
