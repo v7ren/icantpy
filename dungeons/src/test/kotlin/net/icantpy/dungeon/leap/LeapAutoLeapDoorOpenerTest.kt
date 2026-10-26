@@ -64,4 +64,28 @@ class LeapAutoLeapDoorOpenerTest {
         assertEquals(false, LeapAutoLeapPolicy.doorOpenerClick(cfg.copy(enabled = false), true, false))
         assertEquals(false, LeapAutoLeapPolicy.doorOpenerClick(cfg.copy(doorOpenerLeapEnabled = false), true, false))
     }
+
+    @Test
+    fun headTagsRightBesideTheNameStillParse() {
+        assertEquals("Ren", LeapAutoLeapDoorOpener.parse("[MVP+] [Ren head]Ren opened a WITHER door!"))
+        assertEquals("woule", LeapAutoLeapDoorOpener.parse("[woule head]woule opened a WITHER door!"))
+    }
+
+    @Test
+    fun theBloodKeyHolderIsTheBloodDoorOpener() {
+        LeapAutoLeapDoorOpener.clear()
+        LeapAutoLeapDoorOpener.onChat("[MVP+] [Ren head]Ren has obtained Blood Key!", 1_000)
+        LeapAutoLeapDoorOpener.onChat("The BLOOD DOOR has been opened!", 5_000)
+        assertEquals("Ren", LeapAutoLeapDoorOpener.latestName())
+        LeapAutoLeapDoorOpener.clear()
+    }
+
+    @Test
+    fun aStaleBloodKeyDoesNotNameTheOpener() {
+        LeapAutoLeapDoorOpener.clear()
+        LeapAutoLeapDoorOpener.onChat("Ren has obtained Blood Key!", 1_000)
+        LeapAutoLeapDoorOpener.onChat("The BLOOD DOOR has been opened!", 200_000)
+        assertNull(LeapAutoLeapDoorOpener.latestName())
+        LeapAutoLeapDoorOpener.clear()
+    }
 }
