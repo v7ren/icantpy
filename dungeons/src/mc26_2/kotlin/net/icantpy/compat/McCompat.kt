@@ -71,6 +71,13 @@ object McCompat {
         mc.gameMode?.handleContainerInput(containerId, slot, 0, ContainerInput.PICKUP, player)
     }
 
+    /** Container click with an explicit mouse [button]; [clone] sends a middle click (CLONE) instead of PICKUP. */
+    fun clickContainerSlot(mc: Minecraft, containerId: Int, slot: Int, button: Int, clone: Boolean) {
+        val player = mc.player ?: return
+        val input = if (clone) ContainerInput.CLONE else ContainerInput.PICKUP
+        mc.gameMode?.handleContainerInput(containerId, slot, button, input, player)
+    }
+
     /** Hotbar number-key swap: [hotbarIndex] is 0..8. Index 8 (hotbar slot 9) is the SkyBlock menu star and is rejected. */
     fun swapWithHotbar(mc: Minecraft, containerId: Int, slot: Int, hotbarIndex: Int) {
         require(hotbarIndex in 0..7) { "hotbarIndex must be 0..7, was $hotbarIndex" }

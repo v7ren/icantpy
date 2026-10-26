@@ -11,6 +11,7 @@ internal enum class ConfigContent {
     SPLITS,
     SCORE,
     DRAGONS,
+    TERMINALS,
     LEAP_ROUTES,
     LEAP_LAYOUT,
     LEAP_LOOK,
@@ -66,6 +67,7 @@ internal object ConfigContents {
         ConfigPage.SPLITS to listOf(ConfigContent.SPLITS),
         ConfigPage.SCORE to listOf(ConfigContent.SCORE),
         ConfigPage.DRAGONS to listOf(ConfigContent.DRAGONS),
+        ConfigPage.TERMINALS to listOf(ConfigContent.TERMINALS),
         ConfigPage.LEAP to listOf(
             ConfigContent.LEAP_ROUTES,
             ConfigContent.LEAP_LAYOUT,

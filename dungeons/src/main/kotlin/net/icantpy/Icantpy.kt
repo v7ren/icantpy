@@ -58,6 +58,9 @@ import net.icantpy.qol.invsort.InvSortController
 import net.icantpy.dungeon.timer.AlertSounds
 import net.icantpy.dungeon.score.ScoreTracker
 import net.icantpy.dungeon.splits.RunSplitsController
+import net.icantpy.dungeon.terminal.TerminalOverlay
+import net.icantpy.dungeon.terminal.TerminalSimulator
+import net.icantpy.dungeon.terminal.TerminalUserFonts
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
@@ -114,6 +117,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         PerfHud.load()
         PlayerDisguise.load()
         ScoreTracker.load()
+        TerminalOverlay.load()
         BossAim.load()
         Navigator.load()
         CommandWaypoints.reset()
@@ -154,6 +158,9 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         LeapOrient.onDisconnect()
         RunSplitsController.onUnload()
         ScoreTracker.onDisconnect()
+        TerminalSimulator.stop()
+        TerminalOverlay.reset()
+        TerminalUserFonts.close()
         LOGGER.info("icantpy payload unloaded")
         IcantpyLogFile.close()
     }
@@ -190,6 +197,10 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             return true
         }
         LeapOrient.handleCommand(message)?.let { reply ->
+            if (reply.isNotEmpty()) tell(reply)
+            return true
+        }
+        TerminalSimulator.handleCommand(message)?.let { reply ->
             if (reply.isNotEmpty()) tell(reply)
             return true
         }
@@ -284,6 +295,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         LeapOrient.onTick()
         RunSplitsController.tick()
         ScoreTracker.tick()
+        TerminalSimulator.tick()
+        TerminalOverlay.tick()
         CommandWaypoints.tick()
         CustomCosmeticsShare.tick()
         HeadTextures.tick()
@@ -317,6 +330,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         LeapOrient.onDisconnect()
         RunSplitsController.onDisconnect()
         ScoreTracker.onDisconnect()
+        TerminalSimulator.stop()
+        TerminalOverlay.reset()
         CommandWaypoints.reset()
         StatsArmor.onDisconnect()
         Loadout.onDisconnect()
@@ -472,6 +487,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         partialTick: Float,
     ): Boolean {
         val chest = screen as? AbstractContainerScreen<*> ?: return false
+        if (TerminalOverlay.render(chest, graphics, mouseX, mouseY)) return true
         return LeapMenu.renderOverlay(chest, graphics, mouseX, mouseY, partialTick)
     }
 
@@ -481,6 +497,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         net.icantpy.qol.auto.AutoInputGate.mixinVerdict(net.icantpy.qol.auto.AutoInputEvent.MOUSE_PRESS, event)
             ?.let { return it }
         val chest = screen as? AbstractContainerScreen<*> ?: return null
+        TerminalOverlay.mouseClicked(chest, event)?.let { return it }
         return LeapMenu.mouseClicked(chest, event, doubleClick)
     }
 
@@ -488,6 +505,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         net.icantpy.qol.auto.AutoInputGate.mixinVerdict(net.icantpy.qol.auto.AutoInputEvent.OTHER, event)
             ?.let { return it }
         val chest = screen as? AbstractContainerScreen<*> ?: return null
+        TerminalOverlay.mouseReleased(chest)?.let { return it }
         return LeapMenu.mouseReleased(chest, event)
     }
 
@@ -502,7 +520,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         return LeapMenu.keyPressed(chest, event)
     }
 
-    override fun leapOverlayReady(screen: Screen): Boolean = LeapMenu.overlayReady(screen)
+    override fun leapOverlayReady(screen: Screen): Boolean =
+        TerminalOverlay.overlayReady(screen) || LeapMenu.overlayReady(screen)
 
     override fun hideOdinLeapMenu(): Boolean = LeapMenu.shouldTakeOver()
 
@@ -570,6 +589,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         PerfHud.load()
         PlayerDisguise.load()
         ScoreTracker.load()
+        TerminalOverlay.load()
         BossAim.load()
         Navigator.load()
         ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
@@ -596,6 +616,8 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             LeapOrient.onTick()
             RunSplitsController.tick()
             ScoreTracker.tick()
+            TerminalSimulator.tick()
+            TerminalOverlay.tick()
             CommandWaypoints.tick()
             CustomCosmeticsShare.tick()
             HeadTextures.tick()
@@ -615,6 +637,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
             RunSplitsController.onDisconnect()
             DragonController.onDisconnect()
             ScoreTracker.onDisconnect()
+            TerminalOverlay.reset()
             IcantpyBridge.onDisconnect()
         }
         LOGGER.info("icantpy loaded as a normal Fabric mod")
