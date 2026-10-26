@@ -46,8 +46,13 @@ object LeapAutoLeapController {
         val player = mc.player ?: return false
         if (mc.level == null || !player.isAlive || player.isRemoved) return false
         val item = player.mainHandItem
-        // Silent unless debug is on: only a click with the Spirit Leap in hand is worth explaining.
-        if (!isSpiritLeap(item)) return false
+        if (!isSpiritLeap(item)) {
+            if (LeapOrient.debugActive()) {
+                val id = HypixelItemData.skyblockId(item)
+                LeapOrient.noteAutoLeap("left click seen, but the held item is not a Spirit Leap (${item.hoverName.string}, id=${id ?: "none"}, debug item ok=${localTest()})")
+            }
+            return false
+        }
         if (!cfg.enabled) return noted("blocked: Spirit Leap is disabled")
         if (!inDungeon()) return noted("blocked: not in a dungeon")
         if (McUi.currentScreen(mc) != null) return noted("blocked: a screen is open")

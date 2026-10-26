@@ -1388,7 +1388,7 @@ object LeapOrient {
     fun noteAutoLeap(detail: String) {
         if (!debugActive() || detail == lastAutoLeapNote) return
         lastAutoLeapNote = detail
-        record("auto leap", "left click", true, false, detail)
+        flow("left click: $detail")
     }
 
     /**
