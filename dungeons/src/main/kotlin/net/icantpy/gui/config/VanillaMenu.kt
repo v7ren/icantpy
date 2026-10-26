@@ -443,13 +443,13 @@ internal class MenuDraw(
         }
     }
 
-    fun chip(label: String, x: Int, y: Int, selected: Boolean, action: () -> Unit): Int {
-        val w = measure(label, buttonFont) + 22
+    fun chip(label: String, x: Int, y: Int, selected: Boolean, pad: Int = 22, action: () -> Unit): Int {
+        val w = measure(label, buttonFont) + pad
         val h = 28
         val corner = chrome.controlRadius.coerceAtMost(8f)
         round(x, y, w, h, corner, if (selected) palette.accentSoft else palette.group)
         outline(x, y, w, h, corner, if (selected) palette.accent else palette.line)
-        text(label, x + 11, y + 6, if (selected) palette.accent else palette.text, buttonFont)
+        text(label, x + pad / 2, y + 6, if (selected) palette.accent else palette.text, buttonFont)
         if (visible(y, h) && inClipX(x, w)) hitRect(x, y, w, h)?.let { hits += GuiHit(it, action = action) }
         return w
     }
@@ -469,7 +469,7 @@ internal class MenuDraw(
         outline(x, y, w, h, corner, if (selected) palette.accent else palette.line)
         text(title, x + 10, y + 10, if (selected) palette.accent else palette.text, bodyFont)
         var ty = y + 28
-        wrap(caption, w - 20).forEach { line ->
+        wrap(caption, w - 20, microFont).forEach { line ->
             text(line, x + 10, ty, palette.tertiary, microFont)
             ty += lineHeight(microFont)
         }

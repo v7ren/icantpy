@@ -1323,7 +1323,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         val leap = TickTimers.settings.leap
         var partyDropdown: Triple<Int, Int, Int>? = null
-        var y = grouped(draw, startY, 4) { rowY, index ->
+        var y = grouped(draw, helpY, 4) { rowY, index ->
             when (index) {
                 0 -> actionRow(draw, rowY, "Game state", LeapGameState.currentId(), last = false) { cy ->
                     var x = rightX(0)
@@ -1354,7 +1354,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                     val runW = draw.button("Run", rightX(52), cy, ButtonStyle.PRIMARY) {
                         toast(LeapOrient.simulateBossEvent(debugBossEvent))
                     }
-                    val selectW = draw.measure(label, draw.buttonFont).coerceAtLeast(120) + 48
+                    val titleEnd = innerLeft() + 18 + draw.measure("Boss and action events", draw.bodyFont) + 16
+                    val selectW = (draw.measure(label, draw.buttonFont).coerceAtLeast(120) + 48)
+                        .coerceAtMost(rightX(52) - runW - 8 - titleEnd)
+                        .coerceAtLeast(96)
                     val selectX = rightX(52) - runW - 8 - selectW
                     leapSelect(
                         draw,
@@ -1486,8 +1489,11 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             when (index) {
                 0 -> actionRow(draw, rowY, "Event and value", "Value is optional; the event label is used when blank.", last = false) { cy ->
                     val shown = debugFireEvent.label()
-                    val selectW = draw.measure(shown, draw.buttonFont).coerceAtLeast(120) + 48
                     val valueW = 140
+                    val titleEnd = innerLeft() + 18 + draw.measure("Event and value", draw.bodyFont) + 16
+                    val selectW = (draw.measure(shown, draw.buttonFont).coerceAtLeast(120) + 48)
+                        .coerceAtMost(rightX(0) - valueW - 8 - titleEnd)
+                        .coerceAtLeast(96)
                     val selectX = rightX(0) - selectW - 8 - valueW
                     draw.field(
                         "debug:fire:value",
@@ -1511,12 +1517,13 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
                 else -> actionRow(draw, rowY, "Fire", "Honors card filters, or ignores match text for every card.", last = true) { cy ->
                     val value = field("debug:fire:value", DebugUiMemory.fireValue).also { DebugUiMemory.fireValue = it }
-                    val all = draw.button("Ignore filters", rightX(120), cy, ButtonStyle.GHOST) {
-                        toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = false))
-                    }
-                    draw.button("Fire", rightX(120) - all - 8, cy, ButtonStyle.PRIMARY) {
-                        toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = true))
-                    }
+                    buttonsRight(
+                        draw, cy,
+                        listOf(
+                            Triple("Fire", ButtonStyle.PRIMARY) { toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = true)) },
+                            Triple("Ignore filters", ButtonStyle.GHOST) { toast(LeapOrient.fireDebugEvent(debugFireEvent, value, honorFilters = false)) },
+                        ),
+                    )
                 }
             }
         }
@@ -2697,6 +2704,36 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return y + 8
     }
 
+    /**
+     * Chips drawn right to left. When they would reach the row title on the left, their padding and then their gaps
+     * shrink until they fit, so a row never prints over its own label.
+     */
+    private fun chipsRight(draw: MenuDraw, cy: Int, title: String, labels: List<String>, selected: (Int) -> Boolean, onPick: (Int) -> Unit) {
+        val minX = innerLeft() + 18 + draw.measure(title, draw.bodyFont) + 20
+        val room = rightX(0) - minX
+        var pad = 24
+        var gap = 6
+        fun total() = labels.sumOf { draw.measure(it, draw.buttonFont) + pad } + gap * labels.size
+        while (total() > room && pad > 8) pad -= 2
+        while (total() > room && gap > 2) gap--
+        var x = rightX(0)
+        labels.indices.reversed().forEach { index ->
+            x -= draw.measure(labels[index], draw.buttonFont) + pad
+            draw.chip(labels[index], x, cy, selected(index), pad - 2) { onPick(index) }
+            x -= gap
+        }
+    }
+
+    /** Buttons drawn right to left from the row's right edge, listed in the order they should read. */
+    private fun buttonsRight(draw: MenuDraw, cy: Int, buttons: List<Triple<String, ButtonStyle, () -> Unit>>, edge: Int = rightX(0)) {
+        var x = edge
+        buttons.asReversed().forEach { (label, style, action) ->
+            x -= draw.measure(label, draw.buttonFont) + 28
+            draw.button(label, x, cy, style, action)
+            x -= 8
+        }
+    }
+
     /** A row of chips; [selected] is highlighted, -1 for none. */
     private fun visualChipRow(
         draw: MenuDraw,
@@ -2708,12 +2745,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         last: Boolean,
         onPick: (Int) -> Unit,
     ): Int = actionRow(draw, y, title, subtitle, last) { cy ->
-        var x = rightX(0)
-        labels.indices.reversed().forEach { index ->
-            x -= draw.measure(labels[index], draw.buttonFont) + 24
-            draw.chip(labels[index], x, cy, index == selected) { onPick(index) }
-            x -= 6
-        }
+        chipsRight(draw, cy, title, labels, { it == selected }, onPick)
     }
 
     /**
@@ -3302,14 +3334,14 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Single ability slot", "Hotbar slot 1-9 for the plain Q ability.", last = true) { cy ->
-                slotChips(draw, cy, settings.slot) { value ->
+                slotChips(draw, cy, "Single ability slot", settings.slot) { value ->
                     TickTimers.updateDropUltimate { it.copy(slot = value) }
                 }
             }
         }
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Stack ability slot", "Hotbar slot 1-9 for the Ctrl+Q and stack-key ability.", last = true) { cy ->
-                slotChips(draw, cy, settings.stackSlot) { value ->
+                slotChips(draw, cy, "Stack ability slot", settings.stackSlot) { value ->
                     TickTimers.updateDropUltimate { it.copy(stackSlot = value) }
                 }
             }
@@ -3330,14 +3362,9 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         return y
     }
 
-    private fun slotChips(draw: MenuDraw, cy: Int, selected: Int, onSelect: (Int) -> Unit) {
-        var x = rightX(0)
-        (DropUltimateSettings.MAX_SLOT downTo DropUltimateSettings.MIN_SLOT).forEach { value ->
-            val label = value.toString()
-            x -= draw.measure(label, draw.buttonFont) + 24
-            draw.chip(label, x, cy, selected == value) { onSelect(value) }
-            x -= 6
-        }
+    private fun slotChips(draw: MenuDraw, cy: Int, title: String, selected: Int, onSelect: (Int) -> Unit) {
+        val slots = (DropUltimateSettings.MIN_SLOT..DropUltimateSettings.MAX_SLOT).toList()
+        chipsRight(draw, cy, title, slots.map { it.toString() }, { slots[it] == selected }) { onSelect(slots[it]) }
     }
 
     private fun drawCarriesCounter(draw: MenuDraw, startY: Int): Int {
@@ -3889,18 +3916,22 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         return grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Reset", "Reset the selected count, all counts, or the player list.", last = true) { cy ->
-                val clearW = draw.button("Clear players", rightX(126), cy, ButtonStyle.DANGER) {
-                    TickTimers.updateSlayer { it.clearPlayers() }
-                }
-                val allW = draw.button("All 0", rightX(126) - clearW - 8, cy, ButtonStyle.GHOST) {
-                    TickTimers.updateSlayer { current -> current.copy(players = current.players.map { it.withCount(0) }) }
-                }
-                draw.button("Selected 0", rightX(126) - clearW - allW - 16, cy, ButtonStyle.GHOST) {
-                    val player = TickTimers.settings.slayer.selectedPlayer()
-                    if (player != null) {
-                        TickTimers.updateSlayer { it.updatePlayer(player.name) { current -> current.withCount(0) } }
-                    }
-                }
+                buttonsRight(
+                    draw, cy,
+                    listOf(
+                        Triple("Selected 0", ButtonStyle.GHOST) {
+                            val player = TickTimers.settings.slayer.selectedPlayer()
+                            if (player != null) {
+                                TickTimers.updateSlayer { it.updatePlayer(player.name) { current -> current.withCount(0) } }
+                            }
+                        },
+                        Triple("All 0", ButtonStyle.GHOST) {
+                            TickTimers.updateSlayer { current -> current.copy(players = current.players.map { it.withCount(0) }) }
+                        },
+                        Triple("Clear players", ButtonStyle.DANGER) { TickTimers.updateSlayer { it.clearPlayers() } },
+                    ),
+                    edge = rightX(0),
+                )
             }
         }
     }
