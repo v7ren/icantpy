@@ -1132,7 +1132,7 @@ object LeapOrient {
         val byThisLeap = event == LeapTriggerEvent.SELF_LEAP && leaped != null
         val (ready, waiting) = live.steps.partition {
             LeapAutoStepList.isLeapRow(it) ||
-                if (byThisLeap) LeapTriggerLockState.isSatisfiedByLeap(it, leaped.asClass) else LeapTriggerLockState.isSatisfied(it)
+                if (byThisLeap) LeapTriggerLockState.isSatisfiedByLeap(it, leaped.asClass) else !it.requires.isReal()
         }
         waiting.forEach { step ->
             if (byThisLeap) {
