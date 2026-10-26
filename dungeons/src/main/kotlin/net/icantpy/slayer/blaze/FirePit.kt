@@ -537,6 +537,9 @@ object FirePit {
             hazards,
             c.margin.toDouble(),
             c.maxEscapeDistance.toDouble(),
+            // Never cross a pit that outranks what the player stands in to dodge something milder: from a gap
+            // between pits, staying put beats walking into the next pit.
+            blocked = { key -> columnPriority(key, c) > standingPriority },
         ) { x, z -> isStandable(level, x, feetY, z) }
     }
 
@@ -567,7 +570,15 @@ object FirePit {
             inside = true
             if (c.sound) AlertSounds.play("pling")
         }
-        val found = escape ?: return
+        val found = escape
+        if (found == null) {
+            // Every way out crosses something worse than where the player stands: hold still.
+            if (walkStarted) {
+                stopEscapeWalk()
+                walkStarted = false
+            }
+            return
+        }
         if (ticks >= nextNotifyTick) {
             nextNotifyTick = ticks + NOTIFY_INTERVAL_TICKS
             notify(player, found)
@@ -623,12 +634,17 @@ object FirePit {
         var best = NO_PRIORITY
         for (x in floor(px - margin).toInt()..floor(px + margin).toInt()) {
             for (z in floor(pz - margin).toInt()..floor(pz + margin).toInt()) {
-                val key = packXZ(x, z)
-                if (key in pitActive) best = maxOf(best, c.pitPriority(pitPhaseAt[key] ?: 0))
-                if (key in fireZone) best = maxOf(best, c.priorityFire)
-                if (key in quaziiZone) best = maxOf(best, c.priorityQuaziiZone)
+                best = maxOf(best, columnPriority(packXZ(x, z), c))
             }
         }
+        return best
+    }
+
+    private fun columnPriority(key: Long, c: FirePitConfig): Int {
+        var best = NO_PRIORITY
+        if (key in pitActive) best = maxOf(best, c.pitPriority(pitPhaseAt[key] ?: 0))
+        if (key in fireZone) best = maxOf(best, c.priorityFire)
+        if (key in quaziiZone) best = maxOf(best, c.priorityQuaziiZone)
         return best
     }
 

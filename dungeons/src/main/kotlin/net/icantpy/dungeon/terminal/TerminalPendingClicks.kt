@@ -8,7 +8,7 @@ package net.icantpy.dungeon.terminal
  * Colour-cycle entries count signed steps. When the server applies only some of several queued clicks, the applied
  * steps are subtracted and the rest stay pending.
  */
-class TerminalPendingClicks(private val timeoutMs: Long = DEFAULT_TIMEOUT_MS) {
+class TerminalPendingClicks(var timeoutMs: Long = DEFAULT_TIMEOUT_MS) {
     private data class Pending(val signature: String, val color: RubixColor?, val steps: Int, val sentAtMs: Long)
 
     private val bySlot = HashMap<Int, Pending>()
@@ -62,6 +62,6 @@ class TerminalPendingClicks(private val timeoutMs: Long = DEFAULT_TIMEOUT_MS) {
     private fun signature(item: TerminalItem): String = "${item.itemId}|${item.count}|${item.glint}|${item.name}"
 
     companion object {
-        const val DEFAULT_TIMEOUT_MS = 800L
+        const val DEFAULT_TIMEOUT_MS = 600L
     }
 }

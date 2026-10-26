@@ -315,6 +315,7 @@ object Icantpy : ClientModInitializer, IcantpyPayload {
         MaskTimers.onServerTick()
         if (DungeonListener.state.inBoss) LeapOrient.bossTracker.onServerTick()
         TickTimers.onServerTick()
+        TerminalOverlay.onServerTick()
     }
 
     override fun onDisconnect() {

@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory
 object TerminalOverlay {
     private val LOGGER = LoggerFactory.getLogger("icantpy")
     private const val NO_CONTAINER = -1
+    private const val LAST_RUBIX_SLOT = 32
     private val mc: Minecraft get() = Minecraft.getInstance()
     private val pending = TerminalPendingClicks()
     private val animations = TerminalAnimations()
@@ -26,6 +27,11 @@ object TerminalOverlay {
     private var sessionType: TerminalType? = null
     private var sessionContainerId = NO_CONTAINER
     private var lockedRubixTarget: RubixColor? = null
+    private var serverTicksOpened = 0
+
+    /** Self-glinting items clicked this terminal: slot to the stack object that was there, so a new one means the server answered. */
+    private val naturalClicks = HashMap<Int, Int>()
+    private val confirmedNatural = HashSet<Int>()
 
     var settings: TerminalSettings = TerminalSettings()
         private set
@@ -49,6 +55,11 @@ object TerminalOverlay {
         } catch (error: java.io.IOException) {
             LOGGER.warn("Could not save terminal settings", error)
         }
+    }
+
+    /** One server tick, from the loader's tick callback; counts how long the open terminal has been up. */
+    fun onServerTick() {
+        if (sessionType != null) serverTicksOpened++
     }
 
     fun tick() {
@@ -83,10 +94,12 @@ object TerminalOverlay {
         val solution = solve(screen, type)
         // First-click protection, as in Odin: a click already on its way when the terminal opens is dropped.
         if (System.currentTimeMillis() - sessionOpenedMs < settings.firstClickDelayMs) return true
+        if (settings.lagProtection && serverTicksOpened < settings.lagProtectionTicks) return true
         val layout = TerminalRenderer.layout(screen.width, screen.height, solution, screen.title.string, settings)
         val slot = layout.slotAt(event.x().toInt(), event.y().toInt(), solution.cells.map { it.slot }) ?: return true
         val cell = solution.cellAt(slot) ?: return true
         if (!TerminalClickPolicy.allows(cell, type, settings)) return true
+        if (!TerminalClickPolicy.allowsButton(cell, type, settings, event.button())) return true
         val click = TerminalClickPolicy.clickFor(type, settings, event.button()) ?: return true
         val target = TerminalClickPolicy.slotFor(cell, solution) ?: return true
         if (TerminalSimulator.owns(screen.menu)) {
@@ -94,6 +107,9 @@ object TerminalOverlay {
             return true
         }
         McUi.clickContainerSlot(mc, screen.menu.containerId, target, click.button, click.clone)
+        if (cell.item.naturalGlint && (type == TerminalType.STARTS_WITH || type == TerminalType.SELECT_COLOR)) {
+            naturalClicks.putIfAbsent(cell.slot, cell.item.stackId)
+        }
         if (settings.predictClicks && type != TerminalType.MELODY) pending.record(cell.item, click.steps, System.currentTimeMillis())
         return true
     }
@@ -117,13 +133,22 @@ object TerminalOverlay {
             endSession()
             sessionType = type
             sessionContainerId = screen.menu.containerId
-            if (freshOpen) sessionOpenedMs = System.currentTimeMillis()
+            if (freshOpen) {
+                sessionOpenedMs = System.currentTimeMillis()
+                serverTicksOpened = 0
+            }
         }
         val snapshot = TerminalSnapshotReader.read(screen.menu, screen.title.string)
+        pending.timeoutMs = settings.resolveTimeoutMs.toLong()
         pending.prune(snapshot, System.currentTimeMillis())
-        val solution = TerminalSolver.solve(type, snapshot, pending.asMap(), lockedRubixTarget)
-        // The colour target is chosen once per terminal so it does not flip while the panes are half turned.
-        if (type == TerminalType.RUBIX && lockedRubixTarget == null && solution.cells.isNotEmpty()) {
+        for (item in snapshot.items) {
+            val clickedStack = naturalClicks[item.slot] ?: continue
+            if (item.stackId != clickedStack) confirmedNatural += item.slot
+        }
+        val solution = TerminalSolver.solve(type, snapshot, pending.asMap(), lockedRubixTarget, confirmedNatural)
+        // The colour target is chosen once per terminal so it does not flip while the panes are half turned. Like
+        // Odin it waits for the last pane (slot 32), so a half-filled window cannot fix the wrong target.
+        if (type == TerminalType.RUBIX && lockedRubixTarget == null && solution.cells.any { it.slot == LAST_RUBIX_SLOT }) {
             lockedRubixTarget = solution.rubixTarget
         }
         return solution
@@ -137,5 +162,7 @@ object TerminalOverlay {
         sessionContainerId = NO_CONTAINER
         lockedRubixTarget = null
         pending.clear()
+        naturalClicks.clear()
+        confirmedNatural.clear()
     }
 }

@@ -31,11 +31,12 @@ object TerminalSolver {
         snapshot: TerminalSnapshot,
         pending: Map<Int, Int> = emptyMap(),
         lockedRubixTarget: RubixColor? = null,
+        confirmed: Set<Int> = emptySet(),
     ): TerminalSolution = when (type) {
         TerminalType.PANES -> panes(snapshot, pending)
         TerminalType.IN_ORDER -> inOrder(snapshot, pending)
-        TerminalType.STARTS_WITH -> startsWith(snapshot, pending)
-        TerminalType.SELECT_COLOR -> selectColor(snapshot, pending)
+        TerminalType.STARTS_WITH -> startsWith(snapshot, pending, confirmed)
+        TerminalType.SELECT_COLOR -> selectColor(snapshot, pending, confirmed)
         TerminalType.RUBIX -> rubix(snapshot, pending, lockedRubixTarget)
         TerminalType.MELODY -> melody(snapshot)
     }
@@ -67,20 +68,20 @@ object TerminalSolver {
         return TerminalSolution(TerminalType.IN_ORDER, cells)
     }
 
-    private fun startsWith(snapshot: TerminalSnapshot, pending: Map<Int, Int>): TerminalSolution {
+    private fun startsWith(snapshot: TerminalSnapshot, pending: Map<Int, Int>, confirmed: Set<Int>): TerminalSolution {
         val letter = TerminalType.startsWithLetter(snapshot.title)
         val cells = itemArea(snapshot).map { item ->
             val matches = letter != null && item.name.startsWith(letter, ignoreCase = true)
-            TerminalCell(item, pickState(item, pending, matches))
+            TerminalCell(item, pickState(item, pending, confirmed, matches))
         }
         return TerminalSolution(TerminalType.STARTS_WITH, cells)
     }
 
-    private fun selectColor(snapshot: TerminalSnapshot, pending: Map<Int, Int>): TerminalSolution {
+    private fun selectColor(snapshot: TerminalSnapshot, pending: Map<Int, Int>, confirmed: Set<Int>): TerminalSolution {
         val color = TerminalType.selectColorWords(snapshot.title)?.let(::colorPrefix)
         val cells = itemArea(snapshot).map { item ->
             val matches = color != null && matchesColor(item.itemId, color)
-            TerminalCell(item, pickState(item, pending, matches))
+            TerminalCell(item, pickState(item, pending, confirmed, matches))
         }
         return TerminalSolution(TerminalType.SELECT_COLOR, cells)
     }
@@ -172,8 +173,13 @@ object TerminalSolver {
             !isPane(item.itemId)
     }
 
-    private fun pickState(item: TerminalItem, pending: Map<Int, Int>, matches: Boolean): TerminalCellState = when {
-        item.glint || item.slot in pending -> TerminalCellState.DONE
+    /**
+     * A glint marks an item as clicked, except on items that glint by themselves: those only count once the click
+     * was sent and the server answered ([confirmed]) or is still pending.
+     */
+    private fun pickState(item: TerminalItem, pending: Map<Int, Int>, confirmed: Set<Int>, matches: Boolean): TerminalCellState = when {
+        item.slot in pending || item.slot in confirmed -> TerminalCellState.DONE
+        item.glint && !item.naturalGlint -> TerminalCellState.DONE
         matches -> TerminalCellState.TARGET
         else -> TerminalCellState.WRONG
     }

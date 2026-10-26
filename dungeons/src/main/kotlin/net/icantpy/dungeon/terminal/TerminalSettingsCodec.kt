@@ -68,6 +68,9 @@ object TerminalSettingsCodec {
         json.addProperty("padding", settings.padding)
         json.addProperty("screenDim", settings.screenDim)
         json.addProperty("firstClickDelayMs", settings.firstClickDelayMs)
+        json.addProperty("lagProtection", settings.lagProtection)
+        json.addProperty("lagProtectionTicks", settings.lagProtectionTicks)
+        json.addProperty("resolveTimeoutMs", settings.resolveTimeoutMs)
         return gson.toJson(json)
     }
 
@@ -134,6 +137,9 @@ object TerminalSettingsCodec {
             padding = int(obj, "padding", d.padding, 0, TerminalSettings.MAX_PADDING) ?: return null,
             screenDim = float(obj, "screenDim", d.screenDim, 0f, 1f) ?: return null,
             firstClickDelayMs = int(obj, "firstClickDelayMs", d.firstClickDelayMs, 0, TerminalSettings.MAX_FIRST_CLICK_DELAY_MS) ?: return null,
+            lagProtection = bool(obj, "lagProtection", d.lagProtection) ?: return null,
+            lagProtectionTicks = int(obj, "lagProtectionTicks", d.lagProtectionTicks, TerminalSettings.MIN_LAG_TICKS, TerminalSettings.MAX_LAG_TICKS) ?: return null,
+            resolveTimeoutMs = int(obj, "resolveTimeoutMs", d.resolveTimeoutMs, TerminalSettings.MIN_RESOLVE_TIMEOUT_MS, TerminalSettings.MAX_RESOLVE_TIMEOUT_MS) ?: return null,
         )
     }
 

@@ -19,7 +19,7 @@ object FirePitEscape {
 
     private const val BEARING_COUNT = 32
     private const val STEP = 0.25
-    private const val MIN_DISTANCE = 0.5
+    private const val MIN_DISTANCE = 0.1
     private const val EPSILON = 1e-9
 
     /** True when the player's footprint (point inflated by [margin]) overlaps any hazard column [x, x+1) x [z, z+1). */
@@ -39,8 +39,11 @@ object FirePitEscape {
     }
 
     /**
-     * Nearest safe point. Distances grow in [STEP] increments; at the first distance with a safe candidate, the
-     * bearing whose straight path crosses the fewest hazard columns wins.
+     * Nearest safe point. Candidates are the ring of bearings at growing distances plus the centre of every
+     * nearby cell (so a one-block gap between pits is found even when it is closer than a ring step). Closer
+     * [STEP] buckets win; inside a bucket the path crossing the fewest hazard columns wins. A candidate whose
+     * straight path crosses a [blocked] column is dropped, which keeps a low-priority hazard from sending the
+     * player through a pit that is worse than the one it stands in. Null when nothing qualifies.
      */
     fun solve(
         px: Double,
@@ -48,16 +51,46 @@ object FirePitEscape {
         hazards: Set<Long>,
         margin: Double,
         maxDistance: Double,
+        blocked: (Long) -> Boolean = { false },
         standable: (Int, Int) -> Boolean,
     ): Escape? {
         if (!isInside(px, pz, hazards, margin)) return null
+        var best: Escape? = null
+        var bestBucket = Int.MAX_VALUE
+        var bestCrossed = Int.MAX_VALUE
+        fun consider(candidate: Escape) {
+            val bucket = floor(candidate.distance / STEP).toInt()
+            if (bucket > bestBucket) return
+            val crossed = crossedColumns(px, pz, candidate, hazards, blocked)
+            if (crossed < 0) return
+            if (bucket < bestBucket || crossed < bestCrossed) {
+                best = candidate
+                bestBucket = bucket
+                bestCrossed = crossed
+            }
+        }
         val steps = floor((maxDistance - MIN_DISTANCE) / STEP + EPSILON).toInt()
         for (k in 0..steps) {
             val distance = MIN_DISTANCE + k * STEP
-            val candidates = safeCandidates(px, pz, distance, hazards, margin, standable)
-            if (candidates.isNotEmpty()) return candidates.minBy { crossedColumns(px, pz, it, hazards) }
+            if (floor(distance / STEP).toInt() > bestBucket) break
+            for (candidate in safeCandidates(px, pz, distance, hazards, margin, standable)) consider(candidate)
         }
-        return null
+        val reach = floor(maxDistance).toInt() + 1
+        val baseX = floor(px).toInt()
+        val baseZ = floor(pz).toInt()
+        for (x in baseX - reach..baseX + reach) {
+            for (z in baseZ - reach..baseZ + reach) {
+                val tx = x + 0.5
+                val tz = z + 0.5
+                val dx = tx - px
+                val dz = tz - pz
+                val distance = kotlin.math.sqrt(dx * dx + dz * dz)
+                if (distance > maxDistance || distance < MIN_DISTANCE) continue
+                if (isInside(tx, tz, hazards, margin) || !standable(x, z)) continue
+                consider(Escape(tx, tz, distance, bearing(px, pz, tx, tz)))
+            }
+        }
+        return best
     }
 
     private fun safeCandidates(
@@ -80,8 +113,14 @@ object FirePitEscape {
         return result
     }
 
-    /** Distinct hazard columns touched by the straight segment from the player to the escape, sampled every [STEP]. */
-    private fun crossedColumns(px: Double, pz: Double, escape: Escape, hazards: Set<Long>): Int {
+    /** Distinct hazard columns touched by the straight segment from the player to the escape, sampled every [STEP]; -1 when it touches a [blocked] one. */
+    private fun crossedColumns(
+        px: Double,
+        pz: Double,
+        escape: Escape,
+        hazards: Set<Long>,
+        blocked: (Long) -> Boolean,
+    ): Int {
         val crossed = HashSet<Long>()
         var s = 0.0
         while (s <= escape.distance + EPSILON) {
@@ -89,7 +128,10 @@ object FirePitEscape {
             val x = floor(px + (escape.targetX - px) * fraction).toInt()
             val z = floor(pz + (escape.targetZ - pz) * fraction).toInt()
             val key = packXZ(x, z)
-            if (key in hazards) crossed += key
+            if (key in hazards) {
+                if (blocked(key)) return -1
+                crossed += key
+            }
             s += STEP
         }
         return crossed.size

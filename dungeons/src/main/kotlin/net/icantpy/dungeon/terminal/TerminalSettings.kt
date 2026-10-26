@@ -105,6 +105,9 @@ data class TerminalSettings(
     val padding: Int = DEFAULT_PADDING,
     val screenDim: Float = 0f,
     val firstClickDelayMs: Int = DEFAULT_FIRST_CLICK_DELAY_MS,
+    val lagProtection: Boolean = false,
+    val lagProtectionTicks: Int = DEFAULT_LAG_TICKS,
+    val resolveTimeoutMs: Int = DEFAULT_RESOLVE_TIMEOUT_MS,
 ) {
     fun takesOver(type: TerminalType): Boolean = enabled && when (type) {
         TerminalType.PANES -> panes
@@ -150,7 +153,13 @@ data class TerminalSettings(
         const val MAX_TEXT_SCALE = 2f
         const val DEFAULT_PADDING = 6
         const val MAX_PADDING = 16
-        const val DEFAULT_FIRST_CLICK_DELAY_MS = 350
+        const val DEFAULT_FIRST_CLICK_DELAY_MS = 500
+        const val MIN_LAG_TICKS = 7
+        const val MAX_LAG_TICKS = 16
+        const val DEFAULT_LAG_TICKS = 8
+        const val MIN_RESOLVE_TIMEOUT_MS = 300
+        const val MAX_RESOLVE_TIMEOUT_MS = 1_200
+        const val DEFAULT_RESOLVE_TIMEOUT_MS = 600
         const val MAX_FIRST_CLICK_DELAY_MS = 1_000
         const val DEFAULT_CUSTOM_FONT_SIZE = 10f
         const val MIN_CUSTOM_FONT_SIZE = 6f

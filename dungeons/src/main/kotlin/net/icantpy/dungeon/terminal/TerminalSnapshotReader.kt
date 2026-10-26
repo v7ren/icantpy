@@ -5,6 +5,7 @@ import net.minecraft.core.component.DataComponents
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.world.inventory.AbstractContainerMenu
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.Items
 
 /** Turns a live container menu into a [TerminalSnapshot]. Client thread only. */
 object TerminalSnapshotReader {
@@ -28,8 +29,14 @@ object TerminalSnapshotReader {
             count = stack.count,
             name = Text.strip(stack.hoverName.string),
             glint = serverGlint(stack),
+            naturalGlint = naturalGlint(stack),
+            stackId = System.identityHashCode(stack),
         )
     }
+
+    /** Items that glint on their own, as Odin's enchantOverrides: those with a default glint component, and golden apples. */
+    private fun naturalGlint(stack: ItemStack): Boolean =
+        stack.item === Items.GOLDEN_APPLE || stack.item.components().has(DataComponents.ENCHANTMENT_GLINT_OVERRIDE)
 
     /**
      * The glint the server asked for. ItemStack.hasFoil is not used because icantpy's own item customizer can

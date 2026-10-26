@@ -11,6 +11,10 @@ data class TerminalItem(
     val count: Int,
     val name: String,
     val glint: Boolean,
+    /** The item shows a glint even when nothing was clicked (enchanted apple, nether star...), so [glint] proves nothing. */
+    val naturalGlint: Boolean = false,
+    /** Identity of the stack object; the server replacing a slot's stack changes it even when the item looks the same. */
+    val stackId: Int = 0,
 )
 
 /** Everything a solver needs: the window title, the container's row count and its items. Built on the client thread. */

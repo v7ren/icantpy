@@ -141,6 +141,36 @@ class TerminalSolverTest {
     }
 
     @Test
+    fun selfGlintingItemsStayTargetsUntilTheServerAnswers() {
+        val apple = TerminalItem(10, "enchanted_golden_apple", 1, "Apple", glint = true, naturalGlint = true)
+        val board = snapshot("What starts with: 'A'?", apple)
+        assertEquals(TerminalCellState.TARGET, TerminalSolver.solve(TerminalType.STARTS_WITH, board).cellAt(10)?.state)
+        assertEquals(
+            TerminalCellState.DONE,
+            TerminalSolver.solve(TerminalType.STARTS_WITH, board, confirmed = setOf(10)).cellAt(10)?.state,
+        )
+        assertEquals(
+            TerminalCellState.DONE,
+            TerminalSolver.solve(TerminalType.STARTS_WITH, board, pending = mapOf(10 to 1)).cellAt(10)?.state,
+        )
+    }
+
+    @Test
+    fun colourCycleOnlyTakesTheButtonThatMatchesTheDirection() {
+        val settings = TerminalSettings()
+        val forward = TerminalCell(item(12, "red_stained_glass_pane"), TerminalCellState.TARGET, leftClicks = 1, rightClicks = 4)
+        val backward = TerminalCell(item(13, "red_stained_glass_pane"), TerminalCellState.TARGET, leftClicks = 4, rightClicks = 1)
+        val left = org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT
+        val right = org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_RIGHT
+        assertTrue(TerminalClickPolicy.allowsButton(forward, TerminalType.RUBIX, settings, left))
+        assertFalse(TerminalClickPolicy.allowsButton(forward, TerminalType.RUBIX, settings, right))
+        assertTrue(TerminalClickPolicy.allowsButton(backward, TerminalType.RUBIX, settings, right))
+        assertFalse(TerminalClickPolicy.allowsButton(backward, TerminalType.RUBIX, settings, left))
+        assertTrue(TerminalClickPolicy.allowsButton(backward, TerminalType.RUBIX, settings.copy(blockWrongClicks = false), left))
+        assertTrue(TerminalClickPolicy.allowsButton(backward, TerminalType.PANES, settings, left))
+    }
+
+    @Test
     fun startsWithSkipsBorderAndClickedItems() {
         val solution = TerminalSolver.solve(
             TerminalType.STARTS_WITH,

@@ -432,6 +432,9 @@ internal class TerminalStyleEditor {
         add(Toggle("Block wrong clicks", { it.blockWrongClicks }) { s, v -> s.copy(blockWrongClicks = v) })
         add(Toggle("Show clicks instantly", { it.predictClicks }) { s, v -> s.copy(predictClicks = v) })
         add(Slider("First click delay", 0f, S.MAX_FIRST_CLICK_DELAY_MS.toFloat(), 25f, { it.firstClickDelayMs.toFloat() }, { s, v -> s.copy(firstClickDelayMs = v.roundToInt()) }, ::millis))
+        add(Toggle("Hold clicks for server lag", { it.lagProtection }) { s, v -> s.copy(lagProtection = v) })
+        add(Slider("Lag protection", S.MIN_LAG_TICKS.toFloat(), S.MAX_LAG_TICKS.toFloat(), 1f, { it.lagProtectionTicks.toFloat() }, { s, v -> s.copy(lagProtectionTicks = v.roundToInt()) }, ::ticks))
+        add(Slider("Resolve timeout", S.MIN_RESOLVE_TIMEOUT_MS.toFloat(), S.MAX_RESOLVE_TIMEOUT_MS.toFloat(), 10f, { it.resolveTimeoutMs.toFloat() }, { s, v -> s.copy(resolveTimeoutMs = v.roundToInt()) }, ::millis))
         add(Cycle("Colour numbers", { it.rubixDisplay.label }) { it.copy(rubixDisplay = next(it.rubixDisplay)) })
         add(Heading("Terminals"))
         TerminalType.entries.forEach { type ->
@@ -481,6 +484,8 @@ internal class TerminalStyleEditor {
             val name = TerminalFontChoice.label(settings)
             return if (TerminalUserFonts.isBroken(settings)) "$name (can't load)" else name
         }
+
+        private fun ticks(value: Float): String = "${value.roundToInt()} ticks"
 
         private fun millis(value: Float): String = if (value <= 0f) "Off" else "${value.roundToInt()} ms"
 

@@ -20,6 +20,16 @@ object TerminalClickPolicy {
     }
 
     /**
+     * Colour cycle direction check, as Odin's canClick: with "block wrong clicks" on, a pane that needs right clicks
+     * only takes the right button and one that needs left clicks only takes left or middle. Other terminals pass.
+     */
+    fun allowsButton(cell: TerminalCell, type: TerminalType, settings: TerminalSettings, mouseButton: Int): Boolean {
+        if (type != TerminalType.RUBIX || !settings.blockWrongClicks) return true
+        val needsRight = settings.rubixDisplay == RubixDisplay.SHORTEST && cell.rightClicks < cell.leftClicks
+        return (mouseButton == GLFW.GLFW_MOUSE_BUTTON_RIGHT) == needsRight
+    }
+
+    /**
      * The slot a click on [cell] goes to. On melody the moving pane and the active button both press the button, so
      * the player can click wherever they are looking; it is still one click on the button slot, as vanilla sends.
      */

@@ -19,7 +19,7 @@ class FirePitEscapeTest {
     @Test
     fun playerOutsideHazardsNeedsNoEscape() {
         val hazards = setOf(packXZ(5, 5))
-        assertNull(FirePitEscape.solve(0.5, 0.5, hazards, 0.2, 10.0, anywhere))
+        assertNull(FirePitEscape.solve(0.5, 0.5, hazards, 0.2, 10.0, standable = anywhere))
     }
 
     @Test
@@ -27,7 +27,7 @@ class FirePitEscapeTest {
         // Player in the middle of cell (0,0); hazard spans cells -1..1, so the edge is 1.5 blocks away.
         val hazards = cells(-1..1, -1..1)
         val margin = 0.3
-        val escape = FirePitEscape.solve(0.5, 0.5, hazards, margin, 6.0, anywhere)
+        val escape = FirePitEscape.solve(0.5, 0.5, hazards, margin, 6.0, standable = anywhere)
         assertNotNull(escape)
         assertTrue(escape.distance in 1.8..2.05, "distance was ${escape.distance}")
         assertFalse(FirePitEscape.isInside(escape.targetX, escape.targetZ, hazards, margin))
@@ -36,7 +36,7 @@ class FirePitEscapeTest {
     @Test
     fun plusShapedHazardHasSafeDiagonalEscape() {
         val hazards = setOf(packXZ(0, 0), packXZ(1, 0), packXZ(-1, 0), packXZ(0, 1), packXZ(0, -1))
-        val escape = FirePitEscape.solve(0.5, 0.5, hazards, 0.2, 3.0, anywhere)
+        val escape = FirePitEscape.solve(0.5, 0.5, hazards, 0.2, 3.0, standable = anywhere)
         assertNotNull(escape)
         assertFalse(FirePitEscape.isInside(escape.targetX, escape.targetZ, hazards, 0.2))
         assertTrue(escape.distance <= 1.5, "distance was ${escape.distance}")
@@ -46,10 +46,31 @@ class FirePitEscapeTest {
     fun ringWithOneGapEscapesThroughGap() {
         // Every cell in -1..1 is hazard except (1, 0), which is the gap on the +X side.
         val hazards = cells(-1..1, -1..1) - packXZ(1, 0)
-        val escape = FirePitEscape.solve(0.5, 0.5, hazards, 0.2, 3.0, anywhere)
+        val escape = FirePitEscape.solve(0.5, 0.5, hazards, 0.2, 3.0, standable = anywhere)
         assertNotNull(escape)
         assertEquals(1, cellOf(escape.targetX))
         assertEquals(0, cellOf(escape.targetZ))
+    }
+
+    @Test
+    fun offCentreInAOneBlockGapStepsToTheGapCentreNotThroughAPit() {
+        // Every cell around (0,0) is a pit. The player hugs the gap's edge, so the margin touches a pit.
+        val hazards = cells(-2..2, -2..2) - packXZ(0, 0)
+        val escape = FirePitEscape.solve(0.18, 0.5, hazards, 0.3, 6.0, standable = anywhere)
+        assertNotNull(escape)
+        assertEquals(0, cellOf(escape.targetX))
+        assertEquals(0, cellOf(escape.targetZ))
+        assertFalse(FirePitEscape.isInside(escape.targetX, escape.targetZ, hazards, 0.3))
+    }
+
+    @Test
+    fun blockedColumnsAreNeverCrossed() {
+        // Standing in the fire (milder) at the gap edge; the pits around must not be crossed to get out.
+        val pits = cells(-2..2, -2..2) - packXZ(0, 0)
+        val fire = setOf(packXZ(0, 0))
+        val hazards = pits + fire
+        val escape = FirePitEscape.solve(0.5, 0.5, hazards, 0.3, 6.0, blocked = { it in pits }, standable = anywhere)
+        assertNull(escape)
     }
 
     @Test
