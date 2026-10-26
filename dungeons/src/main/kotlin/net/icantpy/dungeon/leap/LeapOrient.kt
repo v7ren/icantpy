@@ -1458,16 +1458,23 @@ object LeapOrient {
     private fun giveDebugItem(): String {
         if (!canUseDebugCommands()) return "leaporient item requires debug"
         val player = mc.player ?: return "no player"
-        val stack = ItemStack(Items.ENDER_EYE)
+        val stack = ItemStack(Items.ENDER_PEARL)
         stack.set(DataComponents.CUSTOM_NAME, Component.literal("§5Spirit Leap"))
         player.inventory.add(stack)
         return "gave debug Spirit Leap item"
     }
 
+    /**
+     * The test Spirit Leap. The ender eye and recovery compass keep working in any debug session; any other item,
+     * such as the ender pearl the real one uses, only counts in a singleplayer world, so a real Spirit Leap on a
+     * server is never swallowed by the debug menu.
+     */
     fun isDebugLeapItem(stack: ItemStack): Boolean {
-        if (stack.item != Items.ENDER_EYE && stack.item != Items.RECOVERY_COMPASS) return false
-        val name = stack.get(DataComponents.CUSTOM_NAME)?.string ?: return debugActive()
-        return name.contains("Spirit Leap", ignoreCase = true)
+        if (stack.isEmpty) return false
+        val name = stack.get(DataComponents.CUSTOM_NAME)?.string
+        val legacy = stack.item == Items.ENDER_EYE || stack.item == Items.RECOVERY_COMPASS
+        if (legacy) return name?.contains("Spirit Leap", ignoreCase = true) ?: debugActive()
+        return mc.hasSingleplayerServer() && name?.contains("Spirit Leap", ignoreCase = true) == true
     }
 
     private fun status(): String {
