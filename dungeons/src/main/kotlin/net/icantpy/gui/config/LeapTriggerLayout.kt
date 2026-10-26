@@ -215,6 +215,9 @@ internal object LeapTriggerLayout {
     /** Share of the control width given to the kind picker; the value picker takes the rest. */
     const val STEP_KIND_PERCENT = 40
 
+    /** Room kept for the "12." step number at the start of an action row; the pickers use the rest of the label column. */
+    const val STEP_NUMBER_WIDTH = 28
+
     /**
      * Rows shown for an expanded card, in order: event filters first, then the action list. The leap
      * settings sit indented under the leap-target action row, so they appear only while one exists.

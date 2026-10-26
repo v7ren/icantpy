@@ -1913,7 +1913,10 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private fun drawStepRow(edit: LeapCardEdit, index: Int, control: LayoutRect) {
         val step = edit.latest().steps.getOrNull(index) ?: return
         val count = edit.latest().steps.size
-        val parts = LeapTriggerLayout.stepControls(control)
+        // The label column only holds the step number, so the pickers take most of it and long names stay readable.
+        val reclaimed = LeapTriggerLayout.LABEL_WIDTH + LeapTriggerLayout.LABEL_GAP - LeapTriggerLayout.STEP_NUMBER_WIDTH
+        val wide = LayoutRect(control.x - reclaimed, control.y, control.w + reclaimed, control.h)
+        val parts = LeapTriggerLayout.stepControls(wide)
         val draw = edit.draw
         draw.selectButton(step.kind.label, parts.kind.x, parts.kind.y, parts.kind.w, parts.kind.h) {
             val next = LeapAutoStep.nextKind(step.kind, index, edit.latest().steps)
