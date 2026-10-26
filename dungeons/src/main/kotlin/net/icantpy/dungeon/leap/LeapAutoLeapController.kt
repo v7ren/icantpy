@@ -58,29 +58,34 @@ object LeapAutoLeapController {
         if (McUi.currentScreen(mc) != null) return noted("blocked: a screen is open")
         if (pending != null) return true
         if (LeapAutoLeapPolicy.doorOpenerClick(cfg, inDungeon(), inBossRoom(player))) {
-            val name = LeapAutoLeapDoorOpener.latestName() ?: return openManualMenu()
-            if (LeapRoster.isSelf(name)) return openManualMenu()
+            val name = LeapAutoLeapDoorOpener.latestName() ?: return ignored("no door opener known, left click ignored")
+            if (LeapRoster.isSelf(name)) return ignored("you opened the door, left click ignored")
             val playerInfo = LeapRoster.knownPlayers().firstOrNull { it.name.equals(name, ignoreCase = true) }
-            if (playerInfo?.isDead == true) return openManualMenu()
+            if (playerInfo?.isDead == true) return ignored("door opener $name is dead, left click ignored")
             return requestTarget(name, doorOpener = true)
         }
-        if (!orientEnabledInScope()) {
-            LeapOrient.noteAutoLeap(scopeBlock())
-            return false
-        }
+        if (!orientEnabledInScope()) return ignored(scopeBlock())
         // Left click only leaps to the oriented center target. With none, it does nothing; right-click opens the menu.
         val target = LeapMenu.centerPlayer(LeapRoster.knownPlayers(), liveOnly = true)
         if (target == null) {
-            LeapOrient.flow("left click ignored: no center target is leap-oriented, so there is nothing to auto leap to")
-            return noted("no oriented target, left click ignored")
+            return ignored("no center target is leap-oriented, so there is nothing to leap to")
         }
         if (target.isDead || LeapRoster.isSelf(target.name)) {
-            LeapOrient.flow("left click ignored: center target ${target.name} is dead or you")
-            return noted("target ${target.name} dead or self, left click ignored")
+            return ignored("center target ${target.name} is dead or you")
         }
         LeapOrient.flow("left click: opening Spirit Leap and clicking the center target ${target.name} (${target.clazz.displayName}) after ${LeapMenu.settings().autoLeapDelayMs}ms")
         LeapOrient.noteAutoLeap("leaping to ${target.name}")
         return requestTarget(target.name, doorOpener = false)
+    }
+
+    /**
+     * A left click the mod will not turn into a leap. While left-click leap is on, the click is swallowed too: the
+     * server opens the Spirit Leap menu from the click itself, and that menu must not pop up unless a leap was armed.
+     */
+    private fun ignored(reason: String): Boolean {
+        LeapOrient.noteAutoLeap("ignored: $reason")
+        val cfg = LeapMenu.settings()
+        return cfg.autoLeapEnabled || cfg.doorOpenerLeapEnabled
     }
 
     private fun noted(reason: String): Boolean {
