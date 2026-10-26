@@ -35,6 +35,13 @@ object LeapTriggerLockState {
     fun isSatisfied(step: LeapAutoStep): Boolean =
         !step.requires.isReal() || step.requires in completedTargets
 
+    /**
+     * Whether an action row may run for the leap that just fired its card. The row's requirement must be that very
+     * leap: an earlier leap to the same class does not count, or a leap to the tank would pass "requires healer".
+     */
+    fun isSatisfiedByLeap(step: LeapAutoStep, leaped: LeapDungeonClass?): Boolean =
+        !step.requires.isReal() || step.requires == leaped
+
     fun defer(value: DeferredLeapTrigger) {
         deferred[value.trigger.id] = value
     }

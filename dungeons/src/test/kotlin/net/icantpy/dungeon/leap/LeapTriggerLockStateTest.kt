@@ -27,6 +27,17 @@ class LeapTriggerLockStateTest {
     }
 
     @Test
+    fun rowRequiringHealerIsNotSatisfiedByALeapToTankEvenAfterAnEarlierHealerLeap() {
+        val step = LeapAutoStep.leapTarget().copy(requires = LeapDungeonClass.HEALER)
+        LeapTriggerLockState.markCompleted(LeapDungeonClass.HEALER)
+        assertTrue(LeapTriggerLockState.isSatisfied(step))
+        assertFalse(LeapTriggerLockState.isSatisfiedByLeap(step, LeapDungeonClass.TANK))
+        assertFalse(LeapTriggerLockState.isSatisfiedByLeap(step, null))
+        assertTrue(LeapTriggerLockState.isSatisfiedByLeap(step, LeapDungeonClass.HEALER))
+        assertTrue(LeapTriggerLockState.isSatisfiedByLeap(step.copy(requires = LeapDungeonClass.EMPTY), LeapDungeonClass.TANK))
+    }
+
+    @Test
     fun noRequirementPreservesImmediateBehavior() {
         val trigger = LeapOrientTrigger.create(LeapTriggerEvent.CLOCK, "healer")
         assertTrue(LeapTriggerLockState.isSatisfied(trigger))

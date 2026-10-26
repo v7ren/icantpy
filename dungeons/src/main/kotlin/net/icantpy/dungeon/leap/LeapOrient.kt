@@ -1123,8 +1123,18 @@ object LeapOrient {
         }
         if (live.armLeap) armLeapTarget(live, sender, leaped, message)
         // A row with its own requirement waits for that leap on its own; the other rows run now.
-        val (ready, waiting) = live.steps.partition { LeapTriggerLockState.isSatisfied(it) || LeapAutoStepList.isLeapRow(it) }
+        // A card fired by my own leap only runs rows whose requirement is that leap; the others are not parked, or
+        // they would fire later on a different leap of the same class.
+        val byThisLeap = event == LeapTriggerEvent.SELF_LEAP && leaped != null
+        val (ready, waiting) = live.steps.partition {
+            LeapAutoStepList.isLeapRow(it) ||
+                if (byThisLeap) LeapTriggerLockState.isSatisfiedByLeap(it, leaped.asClass) else LeapTriggerLockState.isSatisfied(it)
+        }
         waiting.forEach { step ->
+            if (byThisLeap) {
+                record(sender, message, true, false, "${step.label(StatsArmor.presetLabels())} needs a leap to ${step.requires.displayName}")
+                return@forEach
+            }
             LeapTriggerLockState.deferStep(DeferredLeapStep(live, step, sender, message))
             record(sender, message, true, false, "${step.label(StatsArmor.presetLabels())} waits for leap to ${step.requires.displayName}")
         }
