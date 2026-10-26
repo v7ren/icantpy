@@ -1413,7 +1413,8 @@ object LeapOrient {
                 detail = "",
             ),
         )
-        tell("§b[flow] §f$text")
+        // Chat output follows the debug page's "Trigger chat messages" switch; the chat-debug HUD always gets the line.
+        if (settings().showChatDebugMessages) tell("§b[flow] §f$text")
     }
 
     private fun stepLabel(step: LeapAutoStep): String = step.label(StatsArmor.presetLabels())
