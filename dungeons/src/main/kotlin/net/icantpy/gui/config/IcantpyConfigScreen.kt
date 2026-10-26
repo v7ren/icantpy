@@ -1199,17 +1199,23 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 draw.field(id, field(id, leap.menuOpacity.toString()), "100", rightX(48), cy, 48, focused == id)
             }
         }
-        y = grouped(draw, y, 4) { rowY, index ->
+        y = grouped(draw, y, 5) { rowY, index ->
             if (index == 0) {
                 toggleRow(draw, rowY, "Lock HUD", "Show who / zone / reason on screen, including the latest door opener.", leap.showLockHud, false) {
                     TickTimers.updateLeap { it.copy(showLockHud = !it.showLockHud) }
                 }
             } else if (index == 1) {
+                actionRow(draw, rowY, "Move lock HUD", "Drag it where you want it. The two number rows below set the same offset.", last = false) { cy ->
+                    draw.button("Move", rightX(52), cy, ButtonStyle.PRIMARY) {
+                        McUi.setScreen(Minecraft.getInstance(), net.icantpy.dungeon.leap.LockHudEditorScreen())
+                    }
+                }
+            } else if (index == 2) {
                 val xId = "leap:lockHudX"
                 actionRow(draw, rowY, "Lock HUD X", "Pixels right (+) or left (-) of the default centered spot.", last = false) { cy ->
                     draw.field(xId, field(xId, leap.lockHudX.toString()), "0", rightX(64), cy, 64, focused == xId)
                 }
-            } else if (index == 2) {
+            } else if (index == 3) {
                 val yId = "leap:lockHudY"
                 actionRow(draw, rowY, "Lock HUD Y", "Pixels down (+) or up (-) from the default spot above the hotbar.", last = false) { cy ->
                     draw.field(yId, field(yId, leap.lockHudY.toString()), "0", rightX(64), cy, 64, focused == yId)

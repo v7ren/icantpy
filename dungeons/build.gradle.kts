@@ -7,7 +7,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-version = "1.0.3.211"
+version = "1.0.3.212"
 group = "net.icantpy"
 
 base {
