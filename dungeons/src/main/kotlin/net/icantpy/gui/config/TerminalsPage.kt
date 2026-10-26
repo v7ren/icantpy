@@ -41,12 +41,10 @@ internal class TerminalsPage {
             "Practise random terminals anywhere, timed, with nothing sent to the server. Also /icantpy termsim [type].",
             "Start", ButtonStyle.GHOST, 72,
         ) { TerminalSimulator.start() }
-        y = RunPageRows.row(draw, m, y, "Preset", "Replace the colours and shapes with a ready-made look.") { cy ->
-            var x = m.rightX(TerminalTheme.entries.sumOf { draw.measure(it.label, draw.buttonFont) + PRESET_PAD })
-            TerminalTheme.entries.forEach { theme ->
-                x += draw.button(theme.label, x, cy, ButtonStyle.GHOST) { TerminalOverlay.updateSettings(theme::applyTo) } + 4
-            }
-        }
+        y = RunPageRows.chips(
+            draw, m, y, "Preset", "Replace the colours and shapes with a ready-made look.",
+            TerminalTheme.entries.map { it.label },
+        ) { index -> TerminalOverlay.updateSettings(TerminalTheme.entries[index]::applyTo) }
         y = RunPageRows.heading(draw, m, y + RunPageRows.GROUP_GAP, "Terminals")
         TerminalType.entries.forEach { type ->
             y = RunPageRows.toggle(draw, m, y, type.displayName, "Use the solver panel for this terminal.", settings.typeEnabled(type)) {
