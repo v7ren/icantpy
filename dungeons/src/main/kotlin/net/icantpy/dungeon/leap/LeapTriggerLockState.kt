@@ -6,6 +6,7 @@ data class DeferredLeapTrigger(
     val sender: String,
     val leaped: LeapedChatMatch?,
     val message: String,
+    val atMs: Long = System.currentTimeMillis(),
 )
 
 /** One action row waiting for a leap to [LeapAutoStep.requires]; it runs on its own once that leap happens. */
@@ -14,10 +15,13 @@ data class DeferredLeapStep(
     val step: LeapAutoStep,
     val sender: String,
     val message: String,
+    val atMs: Long = System.currentTimeMillis(),
 )
 
 /** Tracks class leaps that have completed the current ordered trigger chain. */
 object LeapTriggerLockState {
+    const val PHASE_GRACE_MS = 3_000L
+
     private val completedTargets = linkedSetOf<LeapDungeonClass>()
     private val deferred = linkedMapOf<String, DeferredLeapTrigger>()
     private val deferredSteps = mutableListOf<DeferredLeapStep>()
@@ -26,6 +30,17 @@ object LeapTriggerLockState {
         completedTargets.clear()
         deferred.clear()
         deferredSteps.clear()
+    }
+
+    /**
+     * A phase change drops stale leap history and rows parked in an earlier phase. Rows parked just now are kept: the
+     * event that ends a phase (Storm crushed, Goldor dies) fires its card in the very tick the phase flips, and its
+     * rows are meant for the leap right after it.
+     */
+    fun resetForPhase(nowMs: Long = System.currentTimeMillis(), graceMs: Long = PHASE_GRACE_MS) {
+        completedTargets.clear()
+        deferred.values.removeAll { nowMs - it.atMs > graceMs }
+        deferredSteps.removeAll { nowMs - it.atMs > graceMs }
     }
 
     fun isSatisfied(trigger: LeapOrientTrigger): Boolean =

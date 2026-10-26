@@ -92,7 +92,7 @@ object LeapOrient {
         val phase = LeapGameState.leapPhase()
         if (lastPhase != LeapPhase.UNKNOWN && phase != LeapPhase.UNKNOWN && phase != lastPhase) {
             LeapOrientTargets.dropIfPhaseChanged(phase)
-            LeapTriggerLockState.reset()
+            LeapTriggerLockState.resetForPhase()
             LeapFollowUps.discardAll("phase changed").forEach { discardFollowUp(it.card, it.reason) }
         }
         LeapRelicState.update(phase == LeapPhase.P5)?.let(::handleRelicPickup)
