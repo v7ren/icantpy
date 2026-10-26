@@ -411,6 +411,11 @@ object LeapOrient {
     fun simulateBossToken(token: String): String {
         val event = LeapOrientEngine.bossEventToken(token)
             ?: return "unknown boss: $token (${bossDebugTokens()})"
+        return simulateBossEvent(event)
+    }
+
+    /** Any trigger event: boss events with a chat line go through chat, the rest fire straight into card matching. */
+    fun simulateBossEvent(event: LeapTriggerEvent): String {
         val chat = LeapOrientEngine.bossChatLine(event)
         if (chat != null) {
             ensureDebugStubs()

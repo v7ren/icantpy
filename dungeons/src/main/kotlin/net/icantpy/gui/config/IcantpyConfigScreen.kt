@@ -212,7 +212,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
     private var leapDropdownSpec: LeapDropdownSpec? = null
     private var openDropdownRects: List<LayoutRect> = emptyList()
     private var pendingRevealId: String? = null
-    private var debugBossToken = "storm"
+    private var debugBossEvent = LeapTriggerEvent.BOSS_STORM_END
     private var debugFireEvent = LeapTriggerEvent.SECRETS_REACHED
     private var debugPartyToken = "arch"
     private var renamePreview: RenamePreview? = null
@@ -1260,7 +1260,6 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
             return note(draw, helpY, "Turn on debug mode to simulate the live event pipeline.")
         }
         val leap = TickTimers.settings.leap
-        var bossDropdown: Triple<Int, Int, Int>? = null
         var partyDropdown: Triple<Int, Int, Int>? = null
         var y = grouped(draw, startY, 4) { rowY, index ->
             when (index) {
@@ -1287,27 +1286,23 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
         y = grouped(draw, y, 2) { rowY, index ->
             when (index) {
-                0 -> actionRow(draw, rowY, "Boss events", "Chat line → eligibility → lock.", last = false) { cy ->
-                    val options = listOf(
-                        "Relic pickup" to "relic-pickup",
-                        "Necron die" to "necron-die",
-                        "Goldor die" to "goldor-die",
-                        "Core" to "core",
-                        "Goldor" to "goldor",
-                        "Storm die" to "storm",
-                        "Maxor die" to "maxor",
-                    )
-                    val selected = options.indexOfFirst { it.second == debugBossToken }.coerceAtLeast(0)
-                    val label = options[selected].first
+                0 -> actionRow(draw, rowY, "Boss and action events", "Every trigger event. Boss lines go through chat; the rest fire as the game would.", last = false) { cy ->
+                    val events = LeapTriggerEvent.entries.filter { it != LeapTriggerEvent.CHAT_MESSAGE }
+                    val label = debugBossEvent.label()
                     val runW = draw.button("Run", rightX(52), cy, ButtonStyle.PRIMARY) {
-                        toast(LeapOrient.simulateBossToken(debugBossToken))
+                        toast(LeapOrient.simulateBossEvent(debugBossEvent))
                     }
-                    val selectW = draw.measure(label, draw.buttonFont) + 48
+                    val selectW = draw.measure(label, draw.buttonFont).coerceAtLeast(120) + 48
                     val selectX = rightX(52) - runW - 8 - selectW
-                    draw.selectButton(label, selectX, cy, selectW, LEAP_ROW_CONTROL_HEIGHT) {
-                        openDebugDropdown = if (openDebugDropdown == "boss") null else "boss"
-                    }
-                    bossDropdown = Triple(selectX, cy + 24, selectW)
+                    leapSelect(
+                        draw,
+                        "debug-boss",
+                        label,
+                        events.map { it.label() },
+                        events.indexOf(debugBossEvent).coerceAtLeast(0),
+                        LayoutRect(selectX, cy, selectW, LEAP_ROW_CONTROL_HEIGHT),
+                        leapEventHeaders(events),
+                    ) { choice -> debugBossEvent = events[choice] }
                 }
                 else -> actionRow(draw, rowY, "Party / leaped", "Ping sender or leaped-to-sender custom triggers.", last = true) { cy ->
                     val options = listOf(
@@ -1400,18 +1395,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        if (openDebugDropdown == "boss") {
-            bossDropdown?.let { (x, anchorY, width) ->
-                val options = listOf("Relic pickup", "Necron die", "Goldor die", "Core", "Goldor", "Storm die", "Maxor die")
-                val selected = listOf("relic-pickup", "necron-die", "goldor-die", "core", "goldor", "storm", "maxor")
-                    .indexOf(debugBossToken)
-                    .coerceAtLeast(0)
-                draw.dropdownMenu(x, anchorY, width, options, selected) { index ->
-                    debugBossToken = listOf("relic-pickup", "necron-die", "goldor-die", "core", "goldor", "storm", "maxor")[index]
-                    openDebugDropdown = null
-                }
-            }
-        } else if (openDebugDropdown == "party") {
+        if (openDebugDropdown == "party") {
             partyDropdown?.let { (x, anchorY, width) ->
                 val options = listOf("Archer ping", "Bers ping", "Healer ping", "Mage ping", "Tank ping", "Leaped me", "Sender scene")
                 val selected = listOf("arch", "bers", "heal", "mage", "tank", "leaped", "sender")
