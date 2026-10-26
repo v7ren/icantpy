@@ -793,11 +793,15 @@ object LeapOrient {
             applyTrigger(current, pending.event, pending.sender, pending.leaped, pending.message)
         }
         // Rows that waited on this leap on their own. They already passed their conditions when the card fired.
-        LeapTriggerLockState.takeSteps(clazz).forEach { waiting ->
-            val current = cfg.triggers.firstOrNull { it.id == waiting.trigger.id } ?: return@forEach
-            val step = waiting.step.copy(requires = LeapDungeonClass.EMPTY, branch = LeapBranch.ALWAYS, conditions = emptyList())
-            flow("${stepLabel(waiting.step)}: RELEASED, the leap to ${clazz.displayName} it waited for just happened (card '${current.title()}')")
-            applyAutoSteps(current.copy(steps = listOf(step)), waiting.sender, waiting.message, keySuffix = "#after-${clazz.name}")
+        // Every row of one card that waited on this leap goes out as one ordered batch. Queued one by one they shared a
+        // dedupe key, so only the first ran.
+        LeapTriggerLockState.takeSteps(clazz).groupBy { it.trigger.id }.forEach { (id, released) ->
+            val current = cfg.triggers.firstOrNull { it.id == id } ?: return@forEach
+            val steps = released.map { waiting ->
+                flow("${stepLabel(waiting.step)}: RELEASED, the leap to ${clazz.displayName} it waited for just happened (card '${current.title()}')")
+                waiting.step.copy(requires = LeapDungeonClass.EMPTY, branch = LeapBranch.ALWAYS, conditions = emptyList())
+            }
+            applyAutoSteps(current.copy(steps = steps), released.first().sender, released.first().message, keySuffix = "#after-${clazz.name}")
         }
         LeapTriggerLockState.waitingLines { stepLabel(it) }.let { lines ->
             if (lines.isNotEmpty()) flow("still waiting: " + lines.joinToString("; "))
