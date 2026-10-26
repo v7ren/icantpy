@@ -1258,11 +1258,52 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
         }
     }
 
+    /** The chat diagnostics switches. They stay reachable with debug off, since they also gate the [flow] chat lines. */
+    private fun drawChatDiagnostics(draw: MenuDraw, startY: Int, leap: LeapOrientSettings): Int {
+        var y = section(draw, startY, "Chat diagnostics", "Control the live party-chat trigger lines shown on the debug HUD.")
+        y = grouped(draw, y, 3) { rowY, index ->
+            when (index) {
+                0 -> toggleRow(
+                    draw,
+                    rowY,
+                    "Chat debug HUD",
+                    "Show the recent chat trigger history below the state.",
+                    leap.showChatDebugHud,
+                    false,
+                ) {
+                    TickTimers.updateLeap { it.copy(showChatDebugHud = !it.showChatDebugHud) }
+                }
+                1 -> toggleRow(
+                    draw,
+                    rowY,
+                    "Trigger chat messages",
+                    "Print LOCK, SKIP and [flow] diagnostics into Minecraft chat.",
+                    leap.showChatDebugMessages,
+                    false,
+                ) {
+                    TickTimers.updateLeap { it.copy(showChatDebugMessages = !it.showChatDebugMessages) }
+                }
+                else -> toggleRow(
+                    draw,
+                    rowY,
+                    "Show skipped chats",
+                    "Include messages that did not arm a lock in enabled diagnostics.",
+                    leap.showChatDebugSkips,
+                    true,
+                ) {
+                    TickTimers.updateLeap { it.copy(showChatDebugSkips = !it.showChatDebugSkips) }
+                }
+            }
+        }
+        return y
+    }
+
     private fun drawLeapDebug(draw: MenuDraw, startY: Int): Int {
         DebugUiMemory.ensureLoaded()
         val helpY = pageHelp(draw, startY, "Simulate the live party-chat and boss event pipeline.")
         if (!TickTimers.settings.debugMode && !LeapOrient.debugActive()) {
-            return note(draw, helpY, "Turn on debug mode to simulate the live event pipeline.")
+            val noteY = note(draw, helpY, "Turn on debug mode to simulate the live event pipeline.")
+            return drawChatDiagnostics(draw, noteY + SECTION_GAP, TickTimers.settings.leap)
         }
         val leap = TickTimers.settings.leap
         var partyDropdown: Triple<Int, Int, Int>? = null
@@ -1355,41 +1396,7 @@ class IcantpyConfigScreen : Screen(Component.literal("icantpy")) {
                 }
             }
         }
-        y = section(draw, y + SECTION_GAP, "Chat diagnostics", "Control the live party-chat trigger lines shown on the debug HUD.")
-        y = grouped(draw, y, 3) { rowY, index ->
-            when (index) {
-                0 -> toggleRow(
-                    draw,
-                    rowY,
-                    "Chat debug HUD",
-                    "Show the recent chat trigger history below the state.",
-                    leap.showChatDebugHud,
-                    false,
-                ) {
-                    TickTimers.updateLeap { it.copy(showChatDebugHud = !it.showChatDebugHud) }
-                }
-                1 -> toggleRow(
-                    draw,
-                    rowY,
-                    "Trigger chat messages",
-                    "Print LOCK and optional SKIP diagnostics into Minecraft chat.",
-                    leap.showChatDebugMessages,
-                    false,
-                ) {
-                    TickTimers.updateLeap { it.copy(showChatDebugMessages = !it.showChatDebugMessages) }
-                }
-                else -> toggleRow(
-                    draw,
-                    rowY,
-                    "Show skipped chats",
-                    "Include messages that did not arm a lock in enabled diagnostics.",
-                    leap.showChatDebugSkips,
-                    true,
-                ) {
-                    TickTimers.updateLeap { it.copy(showChatDebugSkips = !it.showChatDebugSkips) }
-                }
-            }
-        }
+        y = drawChatDiagnostics(draw, y + SECTION_GAP, leap)
         y = grouped(draw, y, 1) { rowY, _ ->
             actionRow(draw, rowY, "Preview menu", "Opens the debug Spirit Leap overlay.", last = true) { cy ->
                 val itemW = draw.button("Item", rightX(52), cy, ButtonStyle.GHOST) {
