@@ -806,7 +806,11 @@ object LeapOrient {
                 return@forEach
             }
             if (trigger.armLeap) armChainLeap(trigger, leaped, selfName, selfClass, ctx)
-            applyAutoSteps(trigger, selfName ?: "you", trigger.title())
+            // Chain cards fire on this very leap, so a row's requirement must be this leap, and its conditions are checked now.
+            val steps = LeapConditions.active(trigger.steps, currentFacts()).filter {
+                LeapAutoStepList.isLeapRow(it) || LeapTriggerLockState.isSatisfiedByLeap(it, leaped.asClass)
+            }
+            applyAutoSteps(trigger.copy(steps = steps), selfName ?: "you", trigger.title())
         }
     }
 
